@@ -1,9 +1,7 @@
 # Agent instruction framework
 
-Portable engineering standards for AI coding agents. One source of truth, a
-minimal footprint in the repositories you install it into.
-
-Source-only: no generated file is committed here.
+Portable engineering standards for AI coding agents. One source of truth, a minimal
+footprint in the repositories you install into.
 
 ## What an install adds
 
@@ -19,7 +17,8 @@ Zed and 20+ others, so on its own it is a complete installation.
 
 ## Install
 
-Both scripts take the same arguments and produce identical output.
+Both scripts take the same arguments and produce identical output. Use whichever
+suits your platform.
 
 ```bash
 ./install.sh /path/to/project
@@ -29,14 +28,17 @@ Both scripts take the same arguments and produce identical output.
 pwsh ./install.ps1 -Target C:\code\my-project
 ```
 
-The installer reports which tools it detected, then offers the optional adapters
-with **none** as the default. Press Enter for the clean two-entry install.
+The installer detects the project's stacks and which agentic tools you have, then
+offers the optional adapters with **none** as the default. Press Enter for the clean
+two-entry install.
 
 | Flag | Effect |
 |---|---|
+| `--stacks LIST` / `-Stacks` | Which stacks to install. Default: detected. |
+| `--adapters LIST` / `-Adapters` | Add tool-specific directories. Default: none. |
+| `--check` / `-Check` | Report whether an install is current. Writes nothing. |
 | `--yes` / `-Yes` | Accept defaults, no prompt. |
-| `--adapters LIST` / `-Adapters` | Skip the prompt; add exactly these. |
-| `--force` / `-Force` | Overwrite existing files (otherwise skipped and reported). |
+| `--force` / `-Force` | Overwrite existing files (otherwise skipped). |
 | `--dry-run` / `-DryRun` | Print the plan without writing. |
 
 When stdin is not a terminal the defaults are used without prompting, so CI never
@@ -44,7 +46,7 @@ hangs.
 
 ### Globally
 
-The recommended way to get real skill loading without touching any repository:
+The way to get real skill loading without touching any repository:
 
 ```bash
 ./install.sh --user
@@ -55,8 +57,21 @@ The recommended way to get real skill loading without touching any repository:
 | Claude Code | `~/.claude/CLAUDE.md`, `~/.claude/skills/`, `~/.claude/standards/` |
 | Codex | `~/.codex/AGENTS.md`, `~/.codex/standards/` |
 
-Cursor user rules are set in the app; Copilot is repository-level only. Skills
-*are* written here, because `~/.claude` is not a repository.
+Cursor user rules are set in the app; Copilot is repository-level only. Skills *are*
+written here, because `~/.claude` is not a repository. A user install includes every
+stack, since it serves all your projects.
+
+## Stack scoping
+
+A standard declares `stack:` in its frontmatter. `any` installs everywhere; a named
+stack installs only into matching projects, so a Python repo never receives .NET
+rules.
+
+Detection looks for marker files up to three levels deep: `*.csproj`/`*.sln`/
+`global.json` → `dotnet`; `pyproject.toml`/`setup.py`/`requirements.txt` → `python`;
+`Cargo.toml` → `rust`; `CMakeLists.txt`/`*.vcxproj` → `c-cpp`; `package.json` →
+`node`; `go.mod` → `go`. Override with `--stacks`, or `--stacks any` for universal
+standards only.
 
 ## Optional adapters
 
@@ -72,84 +87,68 @@ Off unless requested. Each adds a directory and buys on-demand loading for one t
 ./install.sh /path/to/project --adapters claude,cursor
 ```
 
-Only Claude Code does on-demand loading well. Cursor's is agent-requested;
-Copilot has no such mode, so only the two standards with natural globs become
-auto-attached files. Without an adapter a tool reads the `AGENTS.md` table and
-opens what it needs — one extra file read for a clean repository. Prefer a global
-install if you want skill loading.
+Only Claude Code does on-demand loading well. Cursor's is agent-requested; Copilot
+has no such mode, so only standards with natural globs become auto-attached files.
+Without an adapter a tool reads the `AGENTS.md` table and opens what it needs — one
+extra file read for a clean repository. Prefer a global install if you want skill
+loading.
 
-## Editing the standards
+## Keeping installs current
 
-Edit a file in `standards/`, then re-run the installer with `--force`. Installed
-copies are snapshots. Nothing is generated inside this repository, so nothing
-here can go stale.
+Installed copies are snapshots. Each generated file records the framework revision
+and the stack set it was built from, so you can ask whether an install is current.
+It writes nothing, and exits 1 when out of date:
 
-### Frontmatter
-
-```markdown
----
-name: testing-standards
-description: What this covers. USE FOR <trigger>. DO NOT USE FOR <exclusion>.
-globs: **/*test*,**/*Test*,**/tests/**
-alwaysApply: false
----
+```bash
+./install.sh /path/to/project --check
 ```
 
-| Key | Required | Purpose |
-|---|---|---|
-| `name` | Yes | Must equal the filename. Becomes the skill and rule name. |
-| `description` | Yes | Drives model-decided loading. |
-| `globs` | No | File patterns. Empty means agent-requested only. |
-| `alwaysApply` | No | Reserved for `_core.md`. |
+```
+Installed version: 2872b676
+Current version:   4e9f10ab
+12 up to date, 1 differ, 1 missing.
+Out of date. Re-install: ./install.sh /path/to/project --force
+```
 
-Both generators validate this and fail on a mismatch.
-
-The `Load when` column in `AGENTS.md` is derived from the `USE FOR` clauses, so it
-cannot drift from the frontmatter. `DO NOT USE FOR` content is excluded — it must
-be, or the table would advertise a standard's exclusions as reasons to load it.
-So write triggers as `USE FOR <concrete task>`, and exclusions as
-`DO NOT USE FOR <near miss>`, naming the standard to use instead.
-
-## Adding a tool
-
-If it reads `AGENTS.md`, it already works. Add an adapter only if the tool has its
-own on-demand loading:
-
-1. Add a branch to `build.ps1` and `build.sh`; add the name to `$KnownAdapters` /
-   `KNOWN_ADAPTERS`.
-2. Add a probe to `Find-Tool` / `detect_tool`, a label to `$ToolLabels` /
-   `tool_label`, an entry to `$AdapterNotes` / `adapter_note`, and the name to
-   `$candidates` / `CANDIDATES`.
-3. Check both generators still agree:
-
-   ```bash
-   sh ./build.sh --out /tmp/a --adapters all && pwsh ./build.ps1 -OutputRoot /tmp/b -Adapters all && diff -r /tmp/a /tmp/b
-   ```
-
-Both emit LF, UTF-8 without BOM, and one trailing newline, so output is
-comparable byte for byte. CI enforces that on Linux, macOS and Windows, and
-asserts a default install adds nothing but `AGENTS.md` and `standards/`.
+To update, edit a file in `standards/` and re-run the installer with `--force`.
 
 ## Requirements
 
-`install.sh` / `build.sh` need POSIX `/bin/sh` plus `awk`, `sed`, `find` (dash,
-bash, or Git Bash). `install.ps1` / `build.ps1` need PowerShell 7+. Installed
-projects need neither — the output is plain Markdown.
+`install.sh` / `build.sh` need POSIX `/bin/sh` plus `awk`, `sed`, `find` (dash, bash,
+or Git Bash). `install.ps1` / `build.ps1` need PowerShell 7+. Installed projects need
+neither — the output is plain Markdown.
 
 ## The standards
+
+Universal (`stack: any`):
 
 | Standard | Covers |
 |---|---|
 | `secure-engineering` | Security priority ordering, secrets, boundary validation, privacy. |
 | `existing-project-conventions` | Repository conventions outrank these defaults. |
 | `elimination-debugging` | Candidate enumeration and the elimination report format. |
+| `error-handling` | Return expected failures; exceptions are for exceptional cases only. |
 | `testing-standards` | Coverage target, definition of done, mocking limits, determinism. |
 | `code-quality` | SOLID and DRY, abstraction timing, comments, dead code. |
 | `architecture-principles` | Vertical slices, composition, no speculative patterns. |
+| `git-and-commits` | Per-task commits in a series, otherwise on request; message format. |
+| `dependency-management` | Licence, supply-chain and lockfile discipline. |
 | `observability-standards` | Structured logging, what to log, health checks. |
 | `performance-discipline` | Measure before optimising; defects to avoid by default. |
 | `technical-writing` | Controlled style for human- and machine-facing prose. |
 
-`_core.md` holds the eight non-negotiables, injected inline into every output
-rather than loaded on demand — a rule that applies only once loaded is not a
+`stack: dotnet`:
+
+| Standard | Covers |
+|---|---|
+| `concurrency-and-async` | Default to async, never block, bound parallelism, safe shared state. |
+| `data-and-migrations` | EF Core migrations, expand and contract, tracking and transactions. |
+
+`_core.md` holds the eight non-negotiables, injected inline into every output rather
+than loaded on demand — a rule that applies only once loaded is not a
 non-negotiable.
+
+## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the frontmatter schema, adding a tool or
+stack, and the test suite.
