@@ -18,6 +18,10 @@
 # Options:
 #   --adapters LIST  Add tool-specific directories: claude,copilot,cursor,all,none
 #                    (default: none). Passing this skips the prompt.
+#   --stacks LIST    Which stacks to install: all, any, dotnet, python, rust, c-cpp,
+#                    node, go. Default: detected from the target project.
+#   --check          Report whether an existing install matches the current
+#                    standards. Writes nothing. Exit 1 if it is out of date.
 #   --yes, -y        Accept the defaults without prompting.
 #   --force          Overwrite existing files.
 #   --dry-run        Report what would be written without changing the destination.
@@ -40,6 +44,9 @@ TARGET=""
 USER_SCOPE=0
 ADAPTERS="none"
 ADAPTERS_EXPLICIT=0
+STACKS="all"
+STACKS_EXPLICIT=0
+CHECK=0
 ASSUME_YES=0
 FORCE=0
 DRY_RUN=0
@@ -49,6 +56,9 @@ while [ $# -gt 0 ]; do
         --user) USER_SCOPE=1 ;;
         --adapters) shift; [ $# -gt 0 ] || { echo "--adapters needs a value" >&2; exit 2; }
                     ADAPTERS="$1"; ADAPTERS_EXPLICIT=1 ;;
+        --stacks) shift; [ $# -gt 0 ] || { echo "--stacks needs a value" >&2; exit 2; }
+                  STACKS="$1"; STACKS_EXPLICIT=1 ;;
+        --check) CHECK=1 ;;
         -y|--yes) ASSUME_YES=1 ;;
         --force) FORCE=1 ;;
         --dry-run) DRY_RUN=1 ;;
@@ -78,7 +88,9 @@ if [ "$USER_SCOPE" -eq 1 ]; then
     CANDIDATES="claude codex"
 else
     if [ ! -d "$TARGET" ]; then
-        if [ "$DRY_RUN" -eq 1 ]; then echo "Would create target directory: $TARGET"; else mkdir -p "$TARGET"; fi
+        if [ "$DRY_RUN" -eq 1 ] || [ "$CHECK" -eq 1 ]; then
+            echo "Target directory does not exist: $TARGET"
+        else mkdir -p "$TARGET"; fi
     fi
     if [ -d "$TARGET" ]; then DESTINATION=$(CDPATH='' cd -- "$TARGET" && pwd); else DESTINATION="$TARGET"; fi
     [ "$DESTINATION" != "$REPO_ROOT" ] || {
@@ -152,6 +164,40 @@ detect_tool() {
     return 1
 }
 
+# --- Stack detection ------------------------------------------------------
+# Stack-specific standards install only into projects that match, so a Python
+# repository never receives .NET rules. Marker files are searched a few levels
+# deep, because projects commonly sit under src/.
+
+detect_stacks() {
+    ds_found=""
+    ds_add() { case " $ds_found " in *" $1 "*) ;; *) ds_found="$ds_found $1" ;; esac; }
+
+    ds_has() {
+        find "$DESTINATION" -maxdepth 3 -name "$1" -not -path '*/node_modules/*' \
+            -not -path '*/.git/*' -print 2>/dev/null | head -n 1 | grep -q .
+    }
+
+    ds_has '*.sln'          && ds_add dotnet
+    ds_has '*.slnx'         && ds_add dotnet
+    ds_has '*.csproj'       && ds_add dotnet
+    ds_has '*.fsproj'       && ds_add dotnet
+    ds_has '*.vbproj'       && ds_add dotnet
+    ds_has 'global.json'    && ds_add dotnet
+    ds_has 'pyproject.toml' && ds_add python
+    ds_has 'setup.py'       && ds_add python
+    ds_has 'requirements.txt' && ds_add python
+    ds_has 'Pipfile'        && ds_add python
+    ds_has 'Cargo.toml'     && ds_add rust
+    ds_has 'CMakeLists.txt' && ds_add c-cpp
+    ds_has '*.vcxproj'      && ds_add c-cpp
+    ds_has 'meson.build'    && ds_add c-cpp
+    ds_has 'package.json'   && ds_add node
+    ds_has 'go.mod'         && ds_add go
+
+    echo "$ds_found" | sed 's/^ //'
+}
+
 tool_label() {
     case "$1" in
         claude)   echo "Claude Code" ;;
@@ -173,6 +219,80 @@ adapter_note() {
         copilot) echo ".github/           glob-attached instructions" ;;
     esac
 }
+
+if [ "$STACKS_EXPLICIT" -eq 0 ]; then
+    if [ "$USER_SCOPE" -eq 1 ]; then
+        # User config serves every project, so every stack is included. The
+        # descriptions are stack-scoped, so a .NET standard will not trigger in a
+        # Python project.
+        STACKS="all"
+    else
+        DETECTED_STACKS=$(detect_stacks)
+        if [ -n "$DETECTED_STACKS" ]; then
+            [ "$CHECK" -eq 1 ] || printf 'Detected stacks: %s\n\n' \
+                "$(echo "$DETECTED_STACKS" | tr ' ' ',' | sed 's/,/, /g')"
+            STACKS=$(echo "$DETECTED_STACKS" | tr ' ' ',')
+        else
+            if [ "$CHECK" -eq 0 ]; then
+                echo "No stack markers found. Installing universal standards only."
+                echo ""
+            fi
+            STACKS="any"
+        fi
+    fi
+fi
+
+# --- Check mode -----------------------------------------------------------
+# Compares an existing install against the current standards. Reuses the normal
+# staging build and path mappings, and only swaps copying for comparing, so the
+# two modes cannot disagree about where a file belongs.
+
+if [ "$CHECK" -eq 1 ]; then
+    [ -e "$DESTINATION/AGENTS.md" ] || [ -e "$DESTINATION/.claude/CLAUDE.md" ] || \
+    [ -e "$DESTINATION/.codex/AGENTS.md" ] || {
+        echo "Nothing installed at $LABEL." >&2
+        echo "Install first: ./install.sh $([ "$USER_SCOPE" -eq 1 ] && echo '--user' || echo "$TARGET")" >&2
+        exit 2; }
+
+    # Infer the adapter set from what is actually present, so the comparison
+    # covers exactly what was installed rather than today's defaults.
+    if [ "$ADAPTERS_EXPLICIT" -eq 0 ]; then
+        ADAPTERS=""
+        [ -d "$DESTINATION/.claude/skills" ] && ADAPTERS="$ADAPTERS,claude"
+        [ -d "$DESTINATION/.cursor/rules" ] && ADAPTERS="$ADAPTERS,cursor"
+        [ -f "$DESTINATION/.github/copilot-instructions.md" ] && ADAPTERS="$ADAPTERS,copilot"
+        ADAPTERS=$(echo "$ADAPTERS" | sed 's/^,//')
+        [ -n "$ADAPTERS" ] || ADAPTERS="none"
+    fi
+
+    STAMP_FILES="$DESTINATION/AGENTS.md $DESTINATION/.claude/CLAUDE.md $DESTINATION/.codex/AGENTS.md"
+
+    INSTALLED_VERSION=$(grep -ho 'Standards version: [0-9a-f]*' $STAMP_FILES 2>/dev/null |
+        head -n 1 | sed 's/.*: //')
+    [ -n "$INSTALLED_VERSION" ] || INSTALLED_VERSION="unstamped"
+
+    # Use the stack set recorded at install time. Re-detecting would compare
+    # against a different set whenever the project has no marker files but was
+    # installed with an explicit --stacks.
+    if [ "$STACKS_EXPLICIT" -eq 0 ]; then
+        STAMPED_STACKS=$(grep -ho 'stacks: [a-z0-9,-]*' $STAMP_FILES 2>/dev/null |
+            head -n 1 | sed 's/.*: //')
+        [ -z "$STAMPED_STACKS" ] || STACKS="$STAMPED_STACKS"
+    fi
+
+    # The current version is read from the staging build below, so check mode
+    # generates exactly once.
+    echo "Checking: $LABEL"
+    printf 'Adapters checked: %s\n\n' "$ADAPTERS"
+
+    if [ "$USER_SCOPE" -eq 1 ]; then
+        SELECTED_TOOLS=""
+        [ -d "$DESTINATION/.claude" ] && SELECTED_TOOLS="$SELECTED_TOOLS claude"
+        [ -d "$DESTINATION/.codex" ] && SELECTED_TOOLS="$SELECTED_TOOLS codex"
+        SELECTED_TOOLS=$(echo "$SELECTED_TOOLS" | sed 's/^ //')
+    fi
+    ADAPTER_LIST="$ADAPTERS"
+else
 
 DETECTED=""
 echo "Detected agentic tools:"
@@ -248,16 +368,20 @@ else
     ADAPTER_LIST="$ADAPTERS"
 fi
 
-echo "Installing to: $LABEL"
-if [ "$USER_SCOPE" -eq 1 ]; then
-    printf 'Tools: %s\n' "$(echo "$SELECTED_TOOLS" | tr -s ' ' | sed 's/ /, /g')"
-elif [ -z "$ADAPTER_LIST" ] || [ "$ADAPTER_LIST" = "none" ]; then
-    echo "Contents: AGENTS.md + standards/ only"
-else
-    printf 'Contents: AGENTS.md + standards/ + adapters (%s)\n' "$ADAPTER_LIST"
 fi
-[ "$DRY_RUN" -eq 0 ] || echo "Dry run: no files will be written."
-echo ""
+
+if [ "$CHECK" -eq 0 ]; then
+    echo "Installing to: $LABEL"
+    if [ "$USER_SCOPE" -eq 1 ]; then
+        printf 'Tools: %s\n' "$(echo "$SELECTED_TOOLS" | tr -s ' ' | sed 's/ /, /g')"
+    elif [ -z "$ADAPTER_LIST" ] || [ "$ADAPTER_LIST" = "none" ]; then
+        echo "Contents: AGENTS.md + standards/ only"
+    else
+        printf 'Contents: AGENTS.md + standards/ + adapters (%s)\n' "$ADAPTER_LIST"
+    fi
+    [ "$DRY_RUN" -eq 0 ] || echo "Dry run: no files will be written."
+    echo ""
+fi
 
 # --- Generate to a staging directory --------------------------------------
 
@@ -268,8 +392,11 @@ mkdir -p "$COUNT_DIR"
 trap 'rm -rf "$STAGING" "$COUNT_DIR"' EXIT INT TERM
 : > "$COUNT_DIR/written"
 : > "$COUNT_DIR/skipped"
+: > "$COUNT_DIR/missing"
+: > "$COUNT_DIR/differs"
+: > "$COUNT_DIR/same"
 
-sh "$BUILD_SCRIPT" --out "$STAGING" --adapters "${ADAPTER_LIST:-none}" >/dev/null
+sh "$BUILD_SCRIPT" --out "$STAGING" --adapters "${ADAPTER_LIST:-none}" --stacks "$STACKS" >/dev/null
 
 # MAPPINGS holds "source-root<TAB>staged-path<TAB>destination-path" lines.
 # Project installs are a straight copy. User installs relocate into the per-tool
@@ -301,6 +428,16 @@ fi
 
 copy_one() {
     cp_src="$1"; cp_dest="$2"
+    if [ "$CHECK" -eq 1 ]; then
+        if [ ! -e "$cp_dest" ]; then
+            echo "  missing  $cp_dest"; echo x >> "$COUNT_DIR/missing"
+        elif ! cmp -s "$cp_src" "$cp_dest"; then
+            echo "  differs  $cp_dest"; echo x >> "$COUNT_DIR/differs"
+        else
+            echo x >> "$COUNT_DIR/same"
+        fi
+        return
+    fi
     if [ -e "$cp_dest" ] && [ "$FORCE" -eq 0 ]; then
         echo "  skip (exists) $cp_dest"
         echo x >> "$COUNT_DIR/skipped"
@@ -329,6 +466,26 @@ echo "$MAPPINGS" | while IFS='	' read -r map_root map_from map_to; do
         copy_one "$map_src" "$DESTINATION/$map_to"
     fi
 done
+
+if [ "$CHECK" -eq 1 ]; then
+    MISSING=$(wc -l < "$COUNT_DIR/missing" | tr -d ' ')
+    DIFFERS=$(wc -l < "$COUNT_DIR/differs" | tr -d ' ')
+    SAME=$(wc -l < "$COUNT_DIR/same" | tr -d ' ')
+
+    CURRENT_VERSION=$(grep -o 'Standards version: [0-9a-f]*' "$STAGING/AGENTS.md" 2>/dev/null |
+        head -n 1 | sed 's/.*: //')
+
+    echo ""
+    printf 'Installed version: %s\n' "$INSTALLED_VERSION"
+    printf 'Current version:   %s\n' "${CURRENT_VERSION:-unknown}"
+    printf '%s up to date, %s differ, %s missing.\n' "$SAME" "$DIFFERS" "$MISSING"
+    if [ "$DIFFERS" -gt 0 ] || [ "$MISSING" -gt 0 ]; then
+        echo "Out of date. Re-install: ./install.sh $([ "$USER_SCOPE" -eq 1 ] && echo '--user' || echo "$TARGET") --force"
+        exit 1
+    fi
+    echo "Up to date."
+    exit 0
+fi
 
 WRITTEN=$(wc -l < "$COUNT_DIR/written" | tr -d ' ')
 SKIPPED=$(wc -l < "$COUNT_DIR/skipped" | tr -d ' ')
