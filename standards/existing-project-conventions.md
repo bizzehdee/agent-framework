@@ -1,60 +1,54 @@
 ---
 name: existing-project-conventions
 description: Precedence rules for working inside an existing repository - follow established architecture, patterns, naming, and tooling over global preferences, and obtain approval before introducing any new framework, pattern, or architectural style. USE FOR any change to a repository you did not create, before choosing a library, before adding a project or folder, before applying a personal or default convention, and when a default guideline conflicts with what the repository already does. DO NOT USE FOR greenfield work with no existing code.
-globs: 
-alwaysApply: false
+globs:
+stack: any
 ---
 
 # Existing project conventions
 
 ## Precedence
 
-Existing project structure takes precedence over global preferences, including
-every default in this framework.
+Existing project structure outranks every default in this framework.
 
-Order of authority, highest first:
+Authority, highest first:
 
 1. An explicit instruction from the user in this conversation.
-2. The repository's own documented conventions, such as `CONTRIBUTING.md`, a style
-   guide, an `.editorconfig`, or a linter configuration.
-3. The patterns actually used in the surrounding code.
-4. The defaults in this framework, including [[architecture-principles]].
+2. The repository's documented conventions: `CONTRIBUTING.md`, a style guide,
+   `.editorconfig`, linter configuration.
+3. The patterns used in the surrounding code.
+4. These standards, including [[architecture-principles]].
 
 ## Rules
 
-- When working in an existing repository, follow the established architecture and
-  conventions unless the user explicitly requests a change.
-- Do not introduce a new framework, library, pattern, or architectural style
-  without user approval.
-- Do not migrate existing code to a preferred style as a side effect of an
-  unrelated change.
-- Match the surrounding code's naming, formatting, error-handling approach, comment
-  density, and test structure.
+- Follow the established architecture and conventions unless the user explicitly
+  requests a change.
+- Never introduce a new framework, library, pattern, or architectural style without
+  approval ([[dependency-management]]).
+- Never migrate existing code to a preferred style as a side effect of an unrelated
+  change.
+- Match the surrounding code's naming, formatting, error handling, comment density,
+  and test structure.
 - Prefer modifying existing code over rewriting working code.
 
-## Before you write code in an unfamiliar repository
+## Establish these before your first change
 
-Establish these facts first, and state what you found:
+State what you found for each:
 
-1. The build and test commands.
-2. The test framework and where tests live.
-3. How the code is organised: by feature, by layer, or otherwise.
-4. The dependency-injection or wiring approach, if any.
-5. The error-handling and validation convention at boundaries.
-6. The logging approach.
-7. Whether a formatter or linter configuration exists, and its rules.
+1. Build and test commands.
+2. Test framework and where tests live.
+3. How code is organised: by feature, by layer, or otherwise.
+4. Dependency-injection or wiring approach, if any.
+5. Error-handling and validation convention at boundaries.
+6. Logging approach.
+7. Formatter or linter configuration and its rules.
 
-If a fact cannot be established from the code, ask rather than assume.
+If a fact cannot be established from the code, ask. Do not assume.
 
 ## When a default conflicts with the repository
 
-Do not silently apply either one. Instead:
+Name the framework default, name what the repository does, follow the repository,
+and note the conflict once so the user can decide.
 
-1. Name the framework default.
-2. Name what the repository does.
-3. Follow the repository.
-4. Note the conflict once in your response, so the user can decide whether to
-   change the convention.
-
-The exception is security. If the repository's convention is insecure, raise it
-rather than following it. See [[secure-engineering]], which is non-negotiable.
+The exception is security. If a repository convention is insecure, raise it rather
+than following it ([[secure-engineering]] is non-negotiable).

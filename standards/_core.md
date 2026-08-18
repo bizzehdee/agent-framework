@@ -2,7 +2,7 @@
 name: _core
 description: Always-on rules. Injected inline into every generated instruction file. Never emitted as an on-demand standard.
 globs:
-alwaysApply: true
+stack: any
 ---
 
 ## Non-negotiables
