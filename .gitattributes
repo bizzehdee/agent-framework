@@ -1,0 +1,8 @@
+# The shell scripts must have LF endings or they will not run on Linux or macOS,
+# and the generators emit LF, so the sources they read are pinned to LF too.
+# Without this, the stored endings depend on each contributor's core.autocrlf.
+*           text=auto eol=lf
+*.sh        text eol=lf
+*.ps1       text eol=lf
+*.md        text eol=lf
+*.yml       text eol=lf
