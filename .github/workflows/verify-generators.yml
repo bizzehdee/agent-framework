@@ -1,0 +1,62 @@
+name: Verify generators
+
+# Generated output is not committed, so there is nothing to check for drift.
+# What must hold is that both generators still run, still agree with each other,
+# and still keep a default install down to AGENTS.md plus standards/.
+
+on:
+  push:
+    paths: ['standards/**', 'build.ps1', 'build.sh', 'install.ps1', 'install.sh', '.github/workflows/verify-generators.yml']
+  pull_request:
+    paths: ['standards/**', 'build.ps1', 'build.sh', 'install.ps1', 'install.sh', '.github/workflows/verify-generators.yml']
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Git for Windows supplies a POSIX sh, so both scripts run on all three.
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generators agree (default, no adapters)
+        shell: bash
+        run: |
+          sh ./build.sh --out "$RUNNER_TEMP/d-sh"
+          pwsh ./build.ps1 -OutputRoot "$RUNNER_TEMP/d-pwsh"
+          diff -r "$RUNNER_TEMP/d-sh" "$RUNNER_TEMP/d-pwsh"
+
+      - name: Generators agree (all adapters)
+        shell: bash
+        run: |
+          sh ./build.sh --out "$RUNNER_TEMP/a-sh" --adapters all
+          pwsh ./build.ps1 -OutputRoot "$RUNNER_TEMP/a-pwsh" -Adapters all
+          diff -r "$RUNNER_TEMP/a-sh" "$RUNNER_TEMP/a-pwsh"
+
+      - name: Default install adds only AGENTS.md and standards/
+        shell: bash
+        run: |
+          sh ./install.sh "$RUNNER_TEMP/clean" < /dev/null
+          # Exactly two root entries, and no tool-specific directories anywhere.
+          actual=$(ls -A "$RUNNER_TEMP/clean" | sort | tr '\n' ' ')
+          test "$actual" = "AGENTS.md standards " || { echo "Unexpected root: $actual"; exit 1; }
+          for unwanted in .claude .cursor .github CLAUDE.md GEMINI.md CONVENTIONS.md; do
+            test ! -e "$RUNNER_TEMP/clean/$unwanted" || { echo "Should not exist: $unwanted"; exit 1; }
+          done
+
+      - name: Installers agree
+        shell: bash
+        run: |
+          sh ./install.sh "$RUNNER_TEMP/i-sh" --adapters all < /dev/null
+          pwsh ./install.ps1 -Target "$RUNNER_TEMP/i-pwsh" -Adapters all
+          diff -r "$RUNNER_TEMP/i-sh" "$RUNNER_TEMP/i-pwsh"
+
+      - name: Re-install is idempotent
+        shell: bash
+        run: |
+          sh ./install.sh "$RUNNER_TEMP/i-sh" --adapters all < /dev/null | tee "$RUNNER_TEMP/re.log"
+          grep -q '^0 file(s) written' "$RUNNER_TEMP/re.log"

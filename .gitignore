@@ -1,0 +1,8 @@
+# Generated output. build.sh / build.ps1 emit into a target directory, never into
+# this repository. These entries only catch an accidental in-place build such as:
+#   ./build.sh --out .
+/AGENTS.md
+/.claude/
+/.cursor/
+/.github/copilot-instructions.md
+/.github/instructions/
