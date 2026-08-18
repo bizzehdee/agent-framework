@@ -40,6 +40,8 @@ param(
 
     [string[]]$Adapters = @('none'),
 
+    [string[]]$Stacks = @('all'),
+
     [switch]$NoStandards
 )
 
@@ -117,21 +119,75 @@ function Read-Standard {
         Name        = $meta['name']
         Description = $meta['description']
         Globs       = if ($meta.ContainsKey('globs')) { $meta['globs'] } else { '' }
+        Stack       = if ($meta.ContainsKey('stack') -and $meta['stack']) { $meta['stack'] } else { 'any' }
         Body        = ($lines[($close + 1)..($lines.Count - 1)] -join "`n").Trim()
     }
 }
 
+# A standard applies when it is universal, or when its stack list intersects the
+# requested stacks. 'all' requests everything.
+function Test-StackMatch {
+    param([Parameter(Mandatory)][hashtable]$Standard, [Parameter(Mandatory)][string[]]$Requested)
+
+    if ($Standard.Stack -eq 'any') { return $true }
+    if ($Requested -contains 'all') { return $true }
+
+    $declared = @($Standard.Stack -split ',' | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ })
+    foreach ($d in $declared) { if ($Requested -contains $d) { return $true } }
+    return $false
+}
+
+# Short hash identifying the framework revision. Covers every source standard,
+# including _core, so one version identifies the whole set regardless of which
+# stacks a given install selected. Ordinal sort and CR stripping keep it equal to
+# the value build.sh computes.
+function Get-StandardsVersion {
+    $names = [string[]]@(Get-ChildItem $StandardsDir -Filter '*.md' | ForEach-Object { $_.Name })
+    [Array]::Sort($names, [System.StringComparer]::Ordinal)
+
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    $stream = New-Object System.IO.MemoryStream
+    foreach ($name in $names) {
+        $header = $utf8.GetBytes("$name`n")
+        $stream.Write($header, 0, $header.Length)
+        $text = [System.IO.File]::ReadAllText((Join-Path $StandardsDir $name)).Replace("`r", '')
+        $body = $utf8.GetBytes($text)
+        $stream.Write($body, 0, $body.Length)
+    }
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hash = $sha.ComputeHash($stream.ToArray())
+        return (($hash | ForEach-Object { $_.ToString('x2') }) -join '').Substring(0, 8)
+    }
+    finally { $sha.Dispose(); $stream.Dispose() }
+}
+
+$standardsVersion = Get-StandardsVersion
+
 $core = Read-Standard (Join-Path $StandardsDir '_core.md')
 
-$standards = Get-ChildItem -Path $StandardsDir -Filter '*.md' |
+$requestedStacks = @($Stacks -split ',' | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ })
+
+# Recorded in every generated file so --check can compare against the stack set
+# that was actually installed, rather than re-detecting and disagreeing.
+$stacksStamp = $requestedStacks -join ','
+
+$allStandards = @(Get-ChildItem -Path $StandardsDir -Filter '*.md' |
     Where-Object { -not $_.Name.StartsWith('_') } |
     Sort-Object Name |
-    ForEach-Object { Read-Standard $_.FullName }
+    ForEach-Object { Read-Standard $_.FullName })
 
-if ($standards.Count -eq 0) { throw "No standards found in $StandardsDir." }
+if ($allStandards.Count -eq 0) { throw "No standards found in $StandardsDir." }
+
+$standards = @($allStandards | Where-Object { Test-StackMatch $_ $requestedStacks })
+$excluded = @($allStandards | Where-Object { -not (Test-StackMatch $_ $requestedStacks) })
 
 Write-Host "Source: $($standards.Count) standards + core" -ForegroundColor Cyan
 Write-Host "Output: $OutputRoot"
+if ($excluded.Count -gt 0) {
+    Write-Host "Excluded by stack: $(($excluded | ForEach-Object { "$($_.Name) ($($_.Stack))" }) -join ', ')" -ForegroundColor DarkGray
+}
 
 # --- Helpers --------------------------------------------------------------
 
@@ -167,18 +223,23 @@ function Get-Trigger {
     return (($useFor -join '; ') -replace '\s+', ' ')
 }
 
-$generatedNotice = @'
+$generatedNotice = @"
 <!-- GENERATED FILE. Do not edit.
-     Source: standards/*.md in the agent-framework repository. -->
-'@
+     Source: standards/*.md in the agent-framework repository.
+     Standards version: $standardsVersion | stacks: $stacksStamp -->
+"@
 
 # --- standards/ -----------------------------------------------------------
 # AGENTS.md refers to these by path, so they are always emitted. Skipped when
 # generating in place, because the source already lives there.
 
 if (-not $NoStandards -and $OutputRoot -ne $RepoRoot) {
-    foreach ($f in (Get-ChildItem $StandardsDir -Filter '*.md' | Sort-Object Name)) {
-        Write-Generated "standards/$($f.Name)" ([System.IO.File]::ReadAllText($f.FullName))
+    # _core.md plus the stack-matching standards only. A standard excluded by
+    # stack must not reach the target, or the repository gains a file for a
+    # language it does not use.
+    Write-Generated 'standards/_core.md' ([System.IO.File]::ReadAllText((Join-Path $StandardsDir '_core.md')))
+    foreach ($s in $standards) {
+        Write-Generated "standards/$($s.Name).md" ([System.IO.File]::ReadAllText((Join-Path $StandardsDir "$($s.Name).md")))
     }
 }
 

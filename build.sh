@@ -16,6 +16,8 @@
 #
 # Options:
 #   --adapters LIST   Optional adapters: claude,copilot,cursor,all,none (default: none).
+#   --stacks LIST     Which stacks to include: all, any, dotnet, ... (default: all).
+#                     A standard with "stack: any" is always included.
 #   --no-standards    Skip emitting standards/. Only safe when every selected
 #                     adapter inlines the full text, because AGENTS.md refers to
 #                     standards/ by path.
@@ -27,12 +29,14 @@ REPO_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 STANDARDS_DIR="$REPO_ROOT/standards"
 OUTPUT_ROOT=""
 ADAPTERS="none"
+STACKS="all"
 NO_STANDARDS=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --out) shift; [ $# -gt 0 ] || { echo "--out needs a directory" >&2; exit 2; }; OUTPUT_ROOT="$1" ;;
         --adapters) shift; [ $# -gt 0 ] || { echo "--adapters needs a value" >&2; exit 2; }; ADAPTERS="$1" ;;
+        --stacks) shift; [ $# -gt 0 ] || { echo "--stacks needs a value" >&2; exit 2; }; STACKS="$1" ;;
         --no-standards) NO_STANDARDS=1 ;;
         -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
@@ -77,6 +81,11 @@ has_adapter() { case " $SELECTED " in *" $1 "*) return 0 ;; *) return 1 ;; esac 
 # Frontmatter is hand-parsed: single-line "key: value" pairs only, so there is
 # no YAML dependency. Mirrors Read-Standard in build.ps1.
 
+# Spawns one awk per lookup, and is called several times per standard per adapter,
+# so a full build costs a few hundred processes. Process creation dominates the
+# runtime: roughly 29s on Windows against 2s for build.ps1, much closer on Linux
+# and macOS. Cache the parsed frontmatter in shell variables if that becomes a
+# problem.
 frontmatter_value() {
     awk -v key="$2" '
         NR == 1 { if ($0 !~ /^---[[:space:]]*$/) { exit 1 } ; next }
@@ -125,6 +134,32 @@ validate_standard() {
         echo "$vs_file: frontmatter name '$vs_name' must match the filename '$vs_base'." >&2; exit 1; }
 }
 
+# Short hash identifying the framework revision. Covers every source standard,
+# including _core, so one version identifies the whole set regardless of which
+# stacks a given install selected. C-locale sort and CR stripping keep it equal to
+# the value build.ps1 computes.
+sha256_hex() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum | cut -d' ' -f1
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 | cut -d' ' -f1
+    elif command -v openssl >/dev/null 2>&1; then
+        openssl dgst -sha256 | sed 's/^.*[= ]//'
+    else
+        echo "No SHA-256 tool found (need sha256sum, shasum, or openssl)." >&2
+        exit 1
+    fi
+}
+
+standards_version() {
+    for sv_f in $(ls "$STANDARDS_DIR"/*.md | LC_ALL=C sort); do
+        printf '%s\n' "$(basename "$sv_f")"
+        tr -d '\r' < "$sv_f"
+    done | sha256_hex | cut -c1-8
+}
+
+STANDARDS_VERSION=$(standards_version)
+
 CORE_FILE="$STANDARDS_DIR/_core.md"
 [ -f "$CORE_FILE" ] || { echo "Missing $CORE_FILE" >&2; exit 1; }
 validate_standard "$CORE_FILE"
@@ -133,7 +168,12 @@ CORE_BODY=$(standard_body "$CORE_FILE")
 STANDARD_NAMES=$(
     for f in "$STANDARDS_DIR"/*.md; do
         b=$(basename "$f" .md)
-        case "$b" in _*) continue ;; esac
+        # Skip underscore-prefixed files such as _core.md. ${b#_} strips one
+        # leading underscore, so a difference means there was one.
+        # Do not use a case statement here: this runs inside $( ), and macOS
+        # /bin/sh (bash 3.2) mistakes the ')' of a case pattern for the closing
+        # parenthesis of the command substitution.
+        [ "${b#_}" = "$b" ] || continue
         echo "$b"
     done | LC_ALL=C sort
 )
@@ -141,9 +181,45 @@ STANDARD_NAMES=$(
 
 for n in $STANDARD_NAMES; do validate_standard "$STANDARDS_DIR/$n.md"; done
 
+# --- Stack filter ---------------------------------------------------------
+# A standard applies when it is universal ("stack: any"), or when its declared
+# stack list intersects the requested stacks. "all" requests everything.
+# Mirrors Test-StackMatch in build.ps1.
+
+REQUESTED_STACKS=$(echo "$STACKS" | tr ',' ' ' | tr '[:upper:]' '[:lower:]')
+
+# Recorded in every generated file so --check can compare against the stack set
+# that was actually installed, rather than re-detecting and disagreeing.
+STACKS_STAMP=$(echo "$REQUESTED_STACKS" | tr -s ' ' | sed 's/^ //;s/ $//' | tr ' ' ',')
+
+stack_matches() {
+    sm_declared=$(frontmatter_value "$STANDARDS_DIR/$1.md" stack)
+    [ -n "$sm_declared" ] || sm_declared="any"
+    [ "$sm_declared" != "any" ] || return 0
+    case " $REQUESTED_STACKS " in *" all "*) return 0 ;; esac
+    for sm_d in $(echo "$sm_declared" | tr ',' ' '); do
+        case " $REQUESTED_STACKS " in *" $sm_d "*) return 0 ;; esac
+    done
+    return 1
+}
+
+INCLUDED=""
+EXCLUDED=""
+for n in $STANDARD_NAMES; do
+    if stack_matches "$n"; then
+        INCLUDED="$INCLUDED$n
+"
+    else
+        EXCLUDED="$EXCLUDED, $n ($(frontmatter_value "$STANDARDS_DIR/$n.md" stack))"
+    fi
+done
+STANDARD_NAMES=$(printf '%s' "$INCLUDED")
+[ -n "$STANDARD_NAMES" ] || { echo "No standards match --stacks $STACKS." >&2; exit 1; }
+
 COUNT=$(echo "$STANDARD_NAMES" | wc -l | tr -d ' ')
 printf 'Source: %s standards + core\n' "$COUNT"
 printf 'Output: %s\n' "$OUTPUT_ROOT"
+[ -z "$EXCLUDED" ] || printf 'Excluded by stack: %s\n' "$(echo "$EXCLUDED" | sed 's/^, //')"
 
 # --- Helpers --------------------------------------------------------------
 
@@ -190,16 +266,21 @@ get_trigger() {
     '
 }
 
-GENERATED_NOTICE='<!-- GENERATED FILE. Do not edit.
-     Source: standards/*.md in the agent-framework repository. -->'
+GENERATED_NOTICE="<!-- GENERATED FILE. Do not edit.
+     Source: standards/*.md in the agent-framework repository.
+     Standards version: $STANDARDS_VERSION | stacks: $STACKS_STAMP -->"
 
 # --- standards/ -----------------------------------------------------------
 # AGENTS.md refers to these by path, so they are always emitted. Skipped when
 # generating in place, because the source already lives there.
 
 if [ "$NO_STANDARDS" -eq 0 ] && [ "$OUTPUT_ROOT" != "$REPO_ROOT" ]; then
-    for f in $(ls "$STANDARDS_DIR"/*.md | LC_ALL=C sort); do
-        write_generated "standards/$(basename "$f")" < "$f"
+    # _core.md plus the stack-matching standards only. A standard excluded by
+    # stack must not reach the target, or the repository gains a file for a
+    # language it does not use.
+    write_generated "standards/_core.md" < "$STANDARDS_DIR/_core.md"
+    for n in $STANDARD_NAMES; do
+        write_generated "standards/$n.md" < "$STANDARDS_DIR/$n.md"
     done
 fi
 
