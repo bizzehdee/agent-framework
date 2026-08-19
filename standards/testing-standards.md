@@ -9,11 +9,12 @@ stack: any
 
 ## Coverage
 
-Aim for **90% branch coverage**, excluding EF Core migrations, generated code, and
-composition-root wiring such as `Program.cs` or `Startup.cs` and its equivalents.
+**90% branch coverage is a floor, not a target**, excluding EF Core migrations,
+generated code, and composition-root wiring such as `Program.cs` or `Startup.cs`
+and its equivalents.
 
 Coverage is a floor for finding untested branches, not a goal. Never add
-assertion-free tests to raise the number. If the target cannot be met, state which
+assertion-free tests to raise the number. If the floor cannot be met, state which
 branches are uncovered and why.
 
 ## Definition of done
