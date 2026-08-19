@@ -133,6 +133,7 @@ Universal (`stack: any`):
 | `architecture-principles` | Vertical slices, composition, no speculative patterns. |
 | `git-and-commits` | Per-task commits in a series, otherwise on request; message format. |
 | `dependency-management` | Licence, supply-chain and lockfile discipline. |
+| `research-provenance` | Check order before web search, archiving, indexing, and extracts. |
 | `observability-standards` | Structured logging, what to log, health checks. |
 | `performance-discipline` | Measure before optimising; defects to avoid by default. |
 | `technical-writing` | Controlled style for human- and machine-facing prose. |

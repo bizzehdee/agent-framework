@@ -32,6 +32,8 @@ Reject what you cannot verify. Never guess a package's provenance.
 
 Prefer, in order: the standard library; a dependency the project already has;
 twenty lines of your own. Never add a dependency to avoid understanding something.
+Check the ticket and `research/` before searching the web for candidates or
+verification ([[research-provenance]]).
 
 ## Pinning
 
