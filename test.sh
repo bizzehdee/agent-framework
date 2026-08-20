@@ -193,9 +193,20 @@ assert_exit 'install refuses the framework repo as target' 2 \
 
 section '5. Default output shape'
 
+# Counts are derived from standards/, never hardcoded. A hardcoded count goes stale
+# the moment a standard is added, which is how this suite last broke.
+SRC_FILES=$(ls "$REPO_ROOT"/standards/*.md | wc -l | tr -d ' ')
+SRC_STANDARDS=$(ls "$REPO_ROOT"/standards/*.md | grep -vc '/_' | tr -d ' ')
+SRC_DOTNET=$(grep -l '^stack: dotnet' "$REPO_ROOT"/standards/*.md | wc -l | tr -d ' ')
+# Alternation of the dotnet-scoped standard names, so the stack tests do not name
+# them literally either.
+DOTNET_PATTERN=$(grep -l '^stack: dotnet' "$REPO_ROOT"/standards/*.md |
+    sed 's|.*/||; s|\.md$||' | tr '\n' '|' | sed 's/|$//')
+
 sh_build --out "$WORK/def"
 assert_eq 'default build root is AGENTS.md + standards' "$(root_entries "$WORK/def")" 'AGENTS.md standards '
-assert_eq 'default build emits 1 + 15 files' "$(count_files "$WORK/def")" '16'
+assert_eq 'default build emits AGENTS.md plus every source file' \
+    "$(count_files "$WORK/def")" "$((SRC_FILES + 1))"
 
 for unwanted in .claude .cursor .github CLAUDE.md GEMINI.md CONVENTIONS.md; do
     if [ -e "$WORK/def/$unwanted" ]; then bad "default build omits $unwanted"
@@ -226,9 +237,9 @@ while IFS= read -r line; do
 done < "$WORK/def/AGENTS.md"
 assert_eq 'no exclusion text leaks into the Load when column' "$EXCLUSION_LEAK" '0'
 
-# 15 files in standards/, of which _core is inlined rather than listed, so 14 rows.
+# _core is inlined into AGENTS.md rather than listed, so it has no row.
 assert_eq 'trigger table has one row per standard' \
-    "$(grep -c '^| `' "$WORK/def/AGENTS.md")" '14'
+    "$(grep -c '^| `' "$WORK/def/AGENTS.md")" "$SRC_STANDARDS"
 
 assert_eq 'AGENTS.md carries a standards version' \
     "$(grep -c 'Standards version: [0-9a-f]\{8\}' "$WORK/def/AGENTS.md")" '1'
@@ -258,15 +269,15 @@ section '8. Stack filtering'
 
 sh_build --out "$WORK/s-any" --stacks any
 assert_eq 'stacks=any excludes the dotnet standards' \
-    "$(ls "$WORK/s-any/standards" | grep -c -E 'concurrency-and-async|data-and-migrations')" '0'
+    "$(ls "$WORK/s-any/standards" | grep -c -E "$DOTNET_PATTERN")" '0'
 
 sh_build --out "$WORK/s-dotnet" --stacks dotnet
 assert_eq 'stacks=dotnet includes the dotnet standards' \
-    "$(ls "$WORK/s-dotnet/standards" | grep -c -E 'concurrency-and-async|data-and-migrations')" '2'
+    "$(ls "$WORK/s-dotnet/standards" | grep -c -E "$DOTNET_PATTERN")" "$SRC_DOTNET"
 
-# 14 standards minus the two dotnet-only ones.
+# Every standard except the stack-scoped ones.
 assert_eq 'stacks=any yields a shorter trigger table' \
-    "$(grep -c '^| `' "$WORK/s-any/AGENTS.md")" '12'
+    "$(grep -c '^| `' "$WORK/s-any/AGENTS.md")" "$((SRC_STANDARDS - SRC_DOTNET))"
 
 # Detection: a marker file under src/ must be found.
 mkdir -p "$WORK/proj-dotnet/src/App" "$WORK/proj-python"
@@ -275,11 +286,11 @@ mkdir -p "$WORK/proj-dotnet/src/App" "$WORK/proj-python"
 
 sh_install "$WORK/proj-dotnet" -y
 assert_eq 'a .NET project receives the dotnet standards' \
-    "$(ls "$WORK/proj-dotnet/standards" | grep -c -E 'concurrency-and-async|data-and-migrations')" '2'
+    "$(ls "$WORK/proj-dotnet/standards" | grep -c -E "$DOTNET_PATTERN")" "$SRC_DOTNET"
 
 sh_install "$WORK/proj-python" -y
 assert_eq 'a Python project receives no dotnet standards' \
-    "$(ls "$WORK/proj-python/standards" | grep -c -E 'concurrency-and-async|data-and-migrations')" '0'
+    "$(ls "$WORK/proj-python/standards" | grep -c -E "$DOTNET_PATTERN")" '0'
 
 # --- 9. Install behaviour ------------------------------------------------
 
