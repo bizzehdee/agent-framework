@@ -132,6 +132,7 @@ Universal (`stack: any`):
 | `code-quality` | SOLID and DRY, abstraction timing, comments, dead code. |
 | `architecture-principles` | Vertical slices, composition, no speculative patterns. |
 | `git-and-commits` | Per-task commits in a series, otherwise on request; message format. |
+| `no-hardcodes` | Pre-commit gate: blocks secrets and environment-specific values. |
 | `dependency-management` | Licence, supply-chain and lockfile discipline. |
 | `research-provenance` | Check order before web search, archiving, indexing, and extracts. |
 | `observability-standards` | Structured logging, what to log, health checks. |
