@@ -100,15 +100,17 @@ output shape, trigger-table correctness, output hygiene, stack filtering and
 detection, install idempotency, `--force`, `--dry-run`, adapter opt-in, check mode,
 and cross-shell agreement.
 
-CI runs the suite on Linux, macOS and Windows.
+CI runs the suite on Linux, where `/bin/sh` is dash, and Windows, where it is the sh
+supplied by Git for Windows.
 
 ## Platform gotchas
 
-- **macOS `/bin/sh` is bash 3.2.** It rejects constructs dash accepts, so a green
-  local `dash -n` proves nothing about that runner. The macOS CI job is the real
-  gate for shell portability. Known case: bash 3.2 mistakes the `)` of a `case`
-  pattern inside `$( )` for the closing parenthesis of the command substitution, so
-  never put a `case` statement inside a command substitution.
+- **macOS `/bin/sh` is bash 3.2, and CI no longer covers it.** bash 3.2 rejects
+  constructs both dash and Git Bash accept, so neither CI job will catch a
+  regression against it. Known case: bash 3.2 mistakes the `)` of a `case` pattern
+  inside `$( )` for the closing parenthesis of the command substitution, so never
+  put a `case` statement inside a command substitution. This has already broken the
+  build once. Run the suite on a Mac before release if macOS support matters.
 - **MSYS path conversion.** On Windows, paths passed as arguments to `pwsh` get
   translated, but a POSIX path embedded in a quoted `-Command` string does not.
   Pass paths as arguments.
