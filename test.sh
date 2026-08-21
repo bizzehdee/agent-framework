@@ -198,9 +198,14 @@ section '5. Default output shape'
 SRC_FILES=$(ls "$REPO_ROOT"/standards/*.md | wc -l | tr -d ' ')
 SRC_STANDARDS=$(ls "$REPO_ROOT"/standards/*.md | grep -vc '/_' | tr -d ' ')
 SRC_DOTNET=$(grep -l '^stack: dotnet' "$REPO_ROOT"/standards/*.md | wc -l | tr -d ' ')
+# Standards scoped to any named stack, i.e. excluded from a stacks=any build.
+SRC_STACKED=$(grep -L '^stack: any' "$REPO_ROOT"/standards/*.md | wc -l | tr -d ' ')
 # Alternation of the dotnet-scoped standard names, so the stack tests do not name
 # them literally either.
 DOTNET_PATTERN=$(grep -l '^stack: dotnet' "$REPO_ROOT"/standards/*.md |
+    sed 's|.*/||; s|\.md$||' | tr '\n' '|' | sed 's/|$//')
+SRC_PYTHON=$(grep -l '^stack: python' "$REPO_ROOT"/standards/*.md | wc -l | tr -d ' ')
+PYTHON_PATTERN=$(grep -l '^stack: python' "$REPO_ROOT"/standards/*.md |
     sed 's|.*/||; s|\.md$||' | tr '\n' '|' | sed 's/|$//')
 
 sh_build --out "$WORK/def"
@@ -277,7 +282,7 @@ assert_eq 'stacks=dotnet includes the dotnet standards' \
 
 # Every standard except the stack-scoped ones.
 assert_eq 'stacks=any yields a shorter trigger table' \
-    "$(grep -c '^| `' "$WORK/s-any/AGENTS.md")" "$((SRC_STANDARDS - SRC_DOTNET))"
+    "$(grep -c '^| `' "$WORK/s-any/AGENTS.md")" "$((SRC_STANDARDS - SRC_STACKED))"
 
 # Detection: a marker file under src/ must be found.
 mkdir -p "$WORK/proj-dotnet/src/App" "$WORK/proj-python"
@@ -291,6 +296,10 @@ assert_eq 'a .NET project receives the dotnet standards' \
 sh_install "$WORK/proj-python" -y
 assert_eq 'a Python project receives no dotnet standards' \
     "$(ls "$WORK/proj-python/standards" | grep -c -E "$DOTNET_PATTERN")" '0'
+assert_eq 'a Python project receives the python standards' \
+    "$(ls "$WORK/proj-python/standards" | grep -c -E "$PYTHON_PATTERN")" "$SRC_PYTHON"
+assert_eq 'a .NET project receives no python standards' \
+    "$(ls "$WORK/proj-dotnet/standards" | grep -c -E "$PYTHON_PATTERN")" '0'
 
 # --- 9. Install behaviour ------------------------------------------------
 

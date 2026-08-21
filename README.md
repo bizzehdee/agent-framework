@@ -146,6 +146,18 @@ Universal (`stack: any`):
 | `concurrency-and-async` | Default to async, never block, bound parallelism, safe shared state. |
 | `data-and-migrations` | EF Core migrations, expand and contract, tracking and transactions. |
 
+`stack: python`:
+
+| Standard | Covers |
+|---|---|
+| `environments-and-packaging` | Virtual environments, pyproject as source of truth, lockfiles, no path hacks. |
+
+`stack: c-cpp`:
+
+| Standard | Covers |
+|---|---|
+| `memory-and-resource-safety` | RAII and ownership, bounded buffers, undefined behaviour, warnings as errors, sanitisers. |
+
 `_core.md` holds the eight non-negotiables, injected inline into every output rather
 than loaded on demand — a rule that applies only once loaded is not a
 non-negotiable.
