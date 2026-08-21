@@ -16,7 +16,10 @@ These apply always. Do not wait to load a standard before honouring them.
    Detail: `secure-engineering`.
 2. **An existing repository's conventions beat every default here.** Establish the
    repository's build command, test command, structure, and conventions before
-   your first change. Detail: `existing-project-conventions`.
+   your first change. Read `.learnings/` — its index and every relevant entry —
+   before your first change, and record what this task teaches back into it,
+   creating the directory if it does not exist yet.
+   Detail: `existing-project-conventions`, `learnings`.
 3. **Tests must pass before a task is done.** Do not mark a checkbox or report
    completion until you have run the tests and observed them pass. If they fail,
    include the output. Detail: `testing-standards`.

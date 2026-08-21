@@ -12,11 +12,13 @@ stack: any
 Before any web search or download, check in this order and stop at the first hit:
 
 1. **The ticket or task.** The answer, or a link to it, may already be stated.
-2. **The `research/` directory.** Someone may have already found and archived this.
-3. **The web.** Only once 1 and 2 have been checked and neither has it.
+2. **The `.learnings/` directory.** A past task may have already distilled the
+   answer ([[learnings]]).
+3. **The `research/` directory.** Someone may have already found and archived this.
+4. **The web.** Only once 1 to 3 have been checked and none has it.
 
 Reaching for a web search or download first is a process error, not a shortcut.
-State which of the first two you checked and what you found (or didn't) before
+State which of the first three you checked and what you found (or didn't) before
 searching the web.
 
 ## Archiving a source
@@ -60,7 +62,7 @@ result, and it needs no archiving step because it is already versioned
 
 ## Checklist
 
-- [ ] Ticket and `research/` checked before any web search.
+- [ ] Ticket, `.learnings/`, and `research/` checked before any web search.
 - [ ] Source archived under `research/` with a version- or date-qualified name.
 - [ ] Index updated with what, version, and where.
 - [ ] Extract written against the task, not left as a bare citation.

@@ -42,6 +42,9 @@ State what you found for each:
 5. Error-handling and validation convention at boundaries.
 6. Logging approach.
 7. Formatter or linter configuration and its rules.
+8. The `.learnings/` entries relevant to the area you are changing. A missing
+   directory means none exist yet — create it when this task produces one
+   ([[learnings]]).
 
 If a fact cannot be established from the code, ask. Do not assume.
 
