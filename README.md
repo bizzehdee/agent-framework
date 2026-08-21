@@ -126,7 +126,7 @@ Universal (`stack: any`):
 |---|---|
 | `secure-engineering` | Security priority ordering, secrets, boundary validation, privacy. |
 | `existing-project-conventions` | Repository conventions outrank these defaults. |
-| `elimination-debugging` | Candidate enumeration and the elimination report format. |
+| `elimination-debugging` | Candidate enumeration, the elimination report format, evidence before decisions. |
 | `error-handling` | Return expected failures; exceptions are for exceptional cases only. |
 | `testing-standards` | Coverage target, definition of done, mocking limits, determinism. |
 | `code-quality` | SOLID and DRY, abstraction timing, comments, dead code. |

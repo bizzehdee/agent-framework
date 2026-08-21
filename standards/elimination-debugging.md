@@ -1,6 +1,6 @@
 ---
 name: elimination-debugging
-description: Structured elimination method for diagnosing a defect, failure, or unexplained behaviour, with a required candidate-enumeration and elimination-table report format. USE FOR debugging a bug, a failing test, a crash, a performance regression, flaky behaviour, an incorrect output, a build failure, or any question of the form "why does X happen". USE FOR root-cause analysis and incident investigation. DO NOT USE FOR implementing a new feature, writing tests for working code, or answering a question that needs no diagnosis.
+description: Structured elimination method for diagnosing a defect, failure, or unexplained behaviour, with a required candidate-enumeration and elimination-table report format, and the evidence-before-decisions rule. USE FOR debugging a bug, a failing test, a crash, a performance regression, flaky behaviour, an incorrect output, a build failure, or any question of the form "why does X happen". USE FOR root-cause analysis and incident investigation. USE FOR backing a non-trivial design or technical decision with gathered evidence rather than a plausible theory. DO NOT USE FOR implementing a new feature, writing tests for working code, or answering a question that needs no diagnosis.
 globs:
 stack: any
 ---
@@ -68,10 +68,29 @@ Absence of other causes is not positive evidence.
 ### Reopening assumptions
 Assumptions that, if false, would reopen an eliminated candidate.
 
+## Evidence before decisions
+
+The same discipline applies to any non-trivial technical decision, not only to a
+defect. Diagnosis comes before any change: the root cause is usually cheaper to
+measure than a fix built on a guess is to unwind, and a fix aimed at an assumed
+cause often masks the real one.
+
+- Back the decision with an observation you actually gathered — the failure
+  output, a targeted trace or probe, a comparison of a working path against the
+  broken one — never with a plausible-sounding theory. Plausibility has pointed
+  at the wrong fix before; a measurement points at the right one.
+- "It's probably X" is the signal to stop and take the measurement that confirms
+  or refutes X before building anything on it.
+- When reporting a root cause or closing a task, cite the observation that proves
+  it — the log line, the trace, the behavioural diff — not just the conclusion,
+  so it is checkable. A belief not yet tested is labelled a hypothesis
+  ([[technical-writing]]).
+
 ## Notes
 
-- A test may be a code read, a log inspection, a query, an instrumented run, or a
-  minimal reproduction. It need not be automated.
+- A test may be a code read, a log inspection, a query, an instrumented run, a
+  comparison of a working path against the broken one, or a minimal
+  reproduction. It need not be automated.
 - A candidate you cannot test with available access is `untested`. Say what access
   is needed. Never silently drop it.
 - A confirmed cause requires a regression test ([[testing-standards]]).
