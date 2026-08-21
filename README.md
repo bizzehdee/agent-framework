@@ -145,6 +145,7 @@ Universal (`stack: any`):
 |---|---|
 | `concurrency-and-async` | Default to async, never block, bound parallelism, safe shared state. |
 | `data-and-migrations` | EF Core migrations, expand and contract, tracking and transactions. |
+| `playwright-integration-tests` | Web projects only: when a behaviour needs a real-browser Playwright test, and e2e conventions. |
 
 `stack: python`:
 
