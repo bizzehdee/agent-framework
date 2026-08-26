@@ -195,7 +195,6 @@ section '5. Default output shape'
 
 # Counts are derived from standards/, never hardcoded. A hardcoded count goes stale
 # the moment a standard is added, which is how this suite last broke.
-SRC_FILES=$(ls "$REPO_ROOT"/standards/*.md | wc -l | tr -d ' ')
 SRC_STANDARDS=$(ls "$REPO_ROOT"/standards/*.md | grep -vc '/_' | tr -d ' ')
 SRC_DOTNET=$(grep -l '^stack: dotnet' "$REPO_ROOT"/standards/*.md | wc -l | tr -d ' ')
 # Standards scoped to any named stack, i.e. excluded from a stacks=any build.
@@ -209,21 +208,67 @@ PYTHON_PATTERN=$(grep -l '^stack: python' "$REPO_ROOT"/standards/*.md |
     sed 's|.*/||; s|\.md$||' | tr '\n' '|' | sed 's/|$//')
 
 sh_build --out "$WORK/def"
-assert_eq 'default build root is AGENTS.md + standards' "$(root_entries "$WORK/def")" 'AGENTS.md standards '
-assert_eq 'default build emits AGENTS.md plus every source file' \
-    "$(count_files "$WORK/def")" "$((SRC_FILES + 1))"
+assert_eq 'default build root is AGENTS.md + .agents' \
+    "$(root_entries "$WORK/def")" '.agents AGENTS.md '
+# One SKILL.md per standard, plus AGENTS.md. _core is inlined, never a skill.
+assert_eq 'default build emits AGENTS.md plus one skill per standard' \
+    "$(count_files "$WORK/def")" "$((SRC_STANDARDS + 1))"
+assert_eq 'every skill directory holds a SKILL.md' \
+    "$(find "$WORK/def/.agents/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" \
+    "$SRC_STANDARDS"
 
-for unwanted in .claude .cursor .github CLAUDE.md GEMINI.md CONVENTIONS.md; do
+# The skills tree is the only copy. An install that also carried standards/ would
+# be back to two copies of every standard, which is the thing this layout removes.
+for unwanted in standards .claude .cursor .github CLAUDE.md GEMINI.md CONVENTIONS.md; do
     if [ -e "$WORK/def/$unwanted" ]; then bad "default build omits $unwanted"
     else ok "default build omits $unwanted"; fi
 done
 
+# Every skill must satisfy the Agent Skills spec: name matches its directory, and
+# the description fits the 1024-character cap.
+SPEC_BAD=0
+for d in "$WORK/def"/.agents/skills/*/; do
+    n=$(basename "$d")
+    f="$d/SKILL.md"
+    [ "$(awk -F': ' '/^name: /{print $2; exit}' "$f")" = "$n" ] || SPEC_BAD=$((SPEC_BAD + 1))
+    desc=$(awk '/^description: /{sub(/^description: /,""); print; exit}' "$f")
+    [ "${#desc}" -le 1024 ] && [ -n "$desc" ] || SPEC_BAD=$((SPEC_BAD + 1))
+done
+assert_eq 'every skill has a spec-valid name and description' "$SPEC_BAD" '0'
+
+# Frontmatter carries only spec fields. stack and globs drive this build; passing
+# them through would put non-standard keys in front of every tool that reads them.
+assert_eq 'skill frontmatter leaks no build-time keys' \
+    "$(awk '/^---$/{n++; next} n==1 && /^(stack|globs):/{c++} END{print c+0}' \
+        "$WORK/def"/.agents/skills/*/SKILL.md)" '0'
+
 # _core is inlined into AGENTS.md, and must never become a skill or a rule.
 sh_build --out "$WORK/adapters" --adapters all
-if [ -e "$WORK/adapters/.claude/skills/_core" ]; then bad '_core is not emitted as a skill'
+if [ -e "$WORK/adapters/.agents/skills/_core" ]; then bad '_core is not emitted as a skill'
 else ok '_core is not emitted as a skill'; fi
-assert_eq '_core is present in standards/' \
-    "$([ -f "$WORK/adapters/standards/_core.md" ] && echo yes || echo no)" 'yes'
+
+# The whole point of the adapters: discovery metadata their tool needs, pointing
+# at the canonical file. A body long enough to be the standard itself is a
+# regression back to duplicated text.
+for f in "$WORK/adapters"/.claude/skills/*/SKILL.md \
+         "$WORK/adapters"/.github/instructions/*.instructions.md; do
+    n=$(wc -l < "$f" | tr -d ' ')
+    [ "$n" -le 15 ] || { bad "adapter file $f is a pointer, not a copy ($n lines)"; break; }
+done
+ok 'adapter files are pointers, not copies'
+
+assert_eq 'every claude stub points at the .agents/skills copy' \
+    "$(grep -l '`\.agents/skills/[a-z-]*/SKILL\.md`' "$WORK/adapters"/.claude/skills/*/SKILL.md |
+        wc -l | tr -d ' ')" "$SRC_STANDARDS"
+
+# --skills-path has to reach every generated reference, or a user install points
+# at a project-relative path that does not exist there.
+sh_build --out "$WORK/userpath" --adapters claude --skills-path '~/.agents/skills'
+assert_eq '--skills-path rewrites the AGENTS.md table' \
+    "$(grep -c '`~/\.agents/skills/[a-z-]*/SKILL\.md`' "$WORK/userpath/AGENTS.md")" "$SRC_STANDARDS"
+assert_eq '--skills-path rewrites the claude stubs' \
+    "$(grep -l '`~/\.agents/skills/[a-z-]*/SKILL\.md`' "$WORK/userpath"/.claude/skills/*/SKILL.md |
+        wc -l | tr -d ' ')" "$SRC_STANDARDS"
 
 # --- 6. Trigger table correctness ---------------------------------------
 
@@ -274,11 +319,11 @@ section '8. Stack filtering'
 
 sh_build --out "$WORK/s-any" --stacks any
 assert_eq 'stacks=any excludes the dotnet standards' \
-    "$(ls "$WORK/s-any/standards" | grep -c -E "$DOTNET_PATTERN")" '0'
+    "$(ls "$WORK/s-any/.agents/skills" | grep -c -E "$DOTNET_PATTERN")" '0'
 
 sh_build --out "$WORK/s-dotnet" --stacks dotnet
 assert_eq 'stacks=dotnet includes the dotnet standards' \
-    "$(ls "$WORK/s-dotnet/standards" | grep -c -E "$DOTNET_PATTERN")" "$SRC_DOTNET"
+    "$(ls "$WORK/s-dotnet/.agents/skills" | grep -c -E "$DOTNET_PATTERN")" "$SRC_DOTNET"
 
 # Every standard except the stack-scoped ones.
 assert_eq 'stacks=any yields a shorter trigger table' \
@@ -291,15 +336,15 @@ mkdir -p "$WORK/proj-dotnet/src/App" "$WORK/proj-python"
 
 sh_install "$WORK/proj-dotnet" -y
 assert_eq 'a .NET project receives the dotnet standards' \
-    "$(ls "$WORK/proj-dotnet/standards" | grep -c -E "$DOTNET_PATTERN")" "$SRC_DOTNET"
+    "$(ls "$WORK/proj-dotnet/.agents/skills" | grep -c -E "$DOTNET_PATTERN")" "$SRC_DOTNET"
 
 sh_install "$WORK/proj-python" -y
 assert_eq 'a Python project receives no dotnet standards' \
-    "$(ls "$WORK/proj-python/standards" | grep -c -E "$DOTNET_PATTERN")" '0'
+    "$(ls "$WORK/proj-python/.agents/skills" | grep -c -E "$DOTNET_PATTERN")" '0'
 assert_eq 'a Python project receives the python standards' \
-    "$(ls "$WORK/proj-python/standards" | grep -c -E "$PYTHON_PATTERN")" "$SRC_PYTHON"
+    "$(ls "$WORK/proj-python/.agents/skills" | grep -c -E "$PYTHON_PATTERN")" "$SRC_PYTHON"
 assert_eq 'a .NET project receives no python standards' \
-    "$(ls "$WORK/proj-dotnet/standards" | grep -c -E "$PYTHON_PATTERN")" '0'
+    "$(ls "$WORK/proj-dotnet/.agents/skills" | grep -c -E "$PYTHON_PATTERN")" '0'
 
 # --- 9. Install behaviour ------------------------------------------------
 
@@ -307,7 +352,8 @@ section '9. Install behaviour'
 
 mkdir -p "$WORK/inst"
 sh_install "$WORK/inst" -y
-assert_eq 'install root is AGENTS.md + standards' "$(root_entries "$WORK/inst")" 'AGENTS.md standards '
+assert_eq 'install root is AGENTS.md + .agents' \
+    "$(root_entries "$WORK/inst")" '.agents AGENTS.md '
 
 BEFORE=$(count_files "$WORK/inst")
 sh "$REPO_ROOT/install.sh" "$WORK/inst" -y </dev/null 2>&1 | grep -q '^0 file(s) written' \
@@ -321,12 +367,15 @@ sh "$REPO_ROOT/install.sh" "$WORK/inst" -y --force </dev/null 2>&1 \
 sh_install "$WORK/inst-claude" -y --adapters claude
 assert_eq '--adapters claude adds .claude' \
     "$([ -d "$WORK/inst-claude/.claude/skills" ] && echo yes || echo no)" 'yes'
-assert_eq '--adapters claude does not add .cursor' \
-    "$([ -d "$WORK/inst-claude/.cursor" ] && echo yes || echo no)" 'no'
+assert_eq '--adapters claude keeps the .agents/skills copy' \
+    "$([ -d "$WORK/inst-claude/.agents/skills" ] && echo yes || echo no)" 'yes'
+assert_eq '--adapters claude adds no other tool directory' \
+    "$([ -e "$WORK/inst-claude/.cursor" ] || [ -e "$WORK/inst-claude/.github" ] && echo yes || echo no)" 'no'
 
-sh_install "$WORK/inst-cursor" -y --adapters cursor
-assert_eq '--adapters cursor adds .cursor/rules' \
-    "$([ -d "$WORK/inst-cursor/.cursor/rules" ] && echo yes || echo no)" 'yes'
+# Cursor reads .agents/skills natively, so there is nothing left for an adapter
+# to do and the name is no longer accepted.
+assert_exit 'cursor is no longer an adapter' 2 \
+    sh "$REPO_ROOT/install.sh" "$WORK/inst-cursor" -y --adapters cursor
 
 sh_install "$WORK/inst-copilot" -y --adapters copilot
 assert_eq '--adapters copilot adds copilot-instructions.md' \
@@ -347,11 +396,11 @@ assert_exit '--check on an empty directory exits 2' 2 \
 assert_exit '--check on a fresh install exits 0' 0 \
     sh "$REPO_ROOT/install.sh" "$WORK/inst" --check
 
-printf '\ntampered\n' >> "$WORK/inst/standards/code-quality.md"
+printf '\ntampered\n' >> "$WORK/inst/.agents/skills/code-quality/SKILL.md"
 assert_exit '--check detects a modified file' 1 \
     sh "$REPO_ROOT/install.sh" "$WORK/inst" --check
 
-rm -f "$WORK/inst/standards/code-quality.md"
+rm -f "$WORK/inst/.agents/skills/code-quality/SKILL.md"
 assert_exit '--check detects a missing file' 1 \
     sh "$REPO_ROOT/install.sh" "$WORK/inst" --check
 
@@ -366,7 +415,8 @@ section '11. Cross-shell agreement'
 if [ "$HAVE_PWSH" -eq 1 ]; then
     for combo in "default::" "adapters:--adapters all:-Adapters all" \
                  "stacks-any:--stacks any:-Stacks any" \
-                 "stacks-dotnet:--stacks dotnet:-Stacks dotnet"; do
+                 "stacks-dotnet:--stacks dotnet:-Stacks dotnet" \
+                 "skillspath:--adapters all --skills-path ~/.agents/skills:-Adapters all -SkillsPath ~/.agents/skills"; do
         name=$(printf '%s' "$combo" | cut -d: -f1)
         shargs=$(printf '%s' "$combo" | cut -d: -f2)
         psargs=$(printf '%s' "$combo" | cut -d: -f3)
@@ -402,6 +452,84 @@ else
     skip 'cross-shell build agreement' 'no pwsh'
     skip 'cross-shell install agreement' 'no pwsh'
     skip 'standards version hash agreement' 'no pwsh'
+fi
+
+# --- 12. Upgrade --------------------------------------------------------
+
+section '12. Upgrade'
+
+# The legacy layout is fabricated rather than generated: the code that produced it
+# is gone from this tree, and what the pruner acts on is the shape on disk. The
+# stamp gives --upgrade a version and a stack set to read, as a real one would.
+make_legacy() {
+    ml_dir="$1"
+    mkdir -p "$ml_dir/standards" "$ml_dir/.cursor/rules" "$ml_dir/.claude/skills"
+    cp "$REPO_ROOT"/standards/*.md "$ml_dir/standards/"
+    for ml_f in "$REPO_ROOT"/standards/*.md; do
+        ml_n=$(basename "$ml_f" .md)
+        [ "${ml_n#_}" = "$ml_n" ] || continue
+        printf -- '---\ndescription: x\nglobs:\nalwaysApply: false\n---\n\nold body\n' \
+            > "$ml_dir/.cursor/rules/$ml_n.mdc"
+        mkdir -p "$ml_dir/.claude/skills/$ml_n"
+        printf -- '---\nname: %s\ndescription: x\n---\n\nold body\n' "$ml_n" \
+            > "$ml_dir/.claude/skills/$ml_n/SKILL.md"
+    done
+    printf '# Agent instructions\n\n<!-- Standards version: 00000000 | stacks: all -->\n' \
+        > "$ml_dir/AGENTS.md"
+    # A skill of the user's own, in a directory the installer manages. It must
+    # survive: the pruner may only touch names that came from standards/.
+    mkdir -p "$ml_dir/.claude/skills/my-own-skill"
+    printf -- '---\nname: my-own-skill\n---\nkeep me\n' \
+        > "$ml_dir/.claude/skills/my-own-skill/SKILL.md"
+}
+
+assert_exit '--upgrade on an empty directory exits 2' 2 \
+    sh "$REPO_ROOT/install.sh" "$WORK/dry" --upgrade
+assert_exit '--upgrade with --check is refused' 2 \
+    sh "$REPO_ROOT/install.sh" "$WORK/inst" --upgrade --check
+
+# --dry-run first, on the same fixture, so the destructive run has something to do.
+make_legacy "$WORK/up-dry"
+LEGACY_FILES=$(count_files "$WORK/up-dry")
+sh_install "$WORK/up-dry" --upgrade --dry-run
+assert_eq '--upgrade --dry-run writes and removes nothing' \
+    "$(count_files "$WORK/up-dry")" "$LEGACY_FILES"
+
+make_legacy "$WORK/up"
+sh_install "$WORK/up" --upgrade -y
+
+assert_eq 'upgrade adds the skills tree' \
+    "$(ls "$WORK/up/.agents/skills" 2>/dev/null | wc -l | tr -d ' ')" "$SRC_STANDARDS"
+assert_eq 'upgrade removes the standards directory' \
+    "$([ -e "$WORK/up/standards" ] && echo yes || echo no)" 'no'
+assert_eq 'upgrade removes the retired cursor directory' \
+    "$([ -e "$WORK/up/.cursor" ] && echo yes || echo no)" 'no'
+
+# The claude adapter was inferred from the install, so its stubs are rewritten
+# rather than dropped — an upgrade must not silently reduce coverage.
+assert_eq 'upgrade keeps the inferred claude adapter' \
+    "$(ls "$WORK/up/.claude/skills" 2>/dev/null | grep -c -v my-own-skill)" "$SRC_STANDARDS"
+assert_eq 'upgrade replaces the old claude bodies with pointers' \
+    "$(grep -c 'old body' "$WORK/up"/.claude/skills/code-quality/SKILL.md)" '0'
+assert_eq 'upgrade leaves a skill of your own alone' \
+    "$(cat "$WORK/up/.claude/skills/my-own-skill/SKILL.md" 2>/dev/null | grep -c 'keep me')" '1'
+
+assert_exit '--check passes on an upgraded install' 0 \
+    sh "$REPO_ROOT/install.sh" "$WORK/up" --check
+
+# Second time through there is nothing left to move, and nothing may be lost.
+UPGRADED=$(count_files "$WORK/up")
+sh_install "$WORK/up" --upgrade -y
+assert_eq 'a second upgrade is a no-op' "$(count_files "$WORK/up")" "$UPGRADED"
+
+if [ "$HAVE_PWSH" -eq 1 ]; then
+    make_legacy "$WORK/up-sh"
+    make_legacy "$WORK/up-ps"
+    sh_install "$WORK/up-sh" --upgrade -y
+    ps_install -Target "$WORK/up-ps" -Upgrade -Yes
+    assert_same_tree 'upgrade agrees across shells' "$WORK/up-sh" "$WORK/up-ps"
+else
+    skip 'cross-shell upgrade agreement' 'no pwsh'
 fi
 
 # --- Summary ------------------------------------------------------------

@@ -6,12 +6,15 @@
 .DESCRIPTION
     A project install adds two entries and nothing else:
 
-        AGENTS.md     the always-on rules and the standards trigger table
-        standards/    one file per standard, read only when its trigger matches
+        AGENTS.md        the always-on rules and the standards trigger table
+        .agents/skills/  one skill per standard, loaded when its trigger matches
 
-    Every supported tool reads AGENTS.md, so that is a complete installation.
-    Tool-specific directories (.claude/, .cursor/, .github/) are never written
-    unless you ask for them with -Adapters.
+    .agents/skills/ is the vendor-neutral Agent Skills location: Codex, Cursor,
+    Copilot/VS Code and OpenCode load it natively, and every other tool reads
+    AGENTS.md and opens the path from its table. One copy serves all of them.
+
+    Claude Code is the exception - it reads only .claude/skills/ - so -Adapters
+    claude writes pointer stubs there. Nothing duplicates a standard's text.
 
     When the input stream is redirected, the defaults are used without prompting.
 
@@ -20,17 +23,21 @@
 
 .PARAMETER User
     Install to user-level configuration so the standards apply to every project
-    without adding files to any repository. Covers Claude Code (~/.claude) and
-    Codex (~/.codex).
+    without adding files to any repository. Writes ~/.agents/skills, which serves
+    Codex, Cursor and Copilot/VS Code, plus Claude Code (~/.claude) and Codex
+    (~/.codex) always-on files.
 
 .PARAMETER Adapters
-    Add tool-specific directories: claude, copilot, cursor, all, none.
-    Defaults to none. Passing this skips the prompt. Accepts an array or a
-    comma-separated string.
+    Add tool-specific directories: claude, copilot, all, none. Defaults to none.
+    Passing this skips the prompt. Accepts an array or a comma-separated string.
 
 .PARAMETER Check
     Report whether an existing install matches the current standards. Writes
     nothing. Exit code 1 if it is out of date.
+
+.PARAMETER Upgrade
+    Bring an existing install to the current layout: infer what was installed,
+    regenerate it, and remove what earlier versions left behind. Implies -Force.
 
 .PARAMETER Yes
     Accept the defaults without prompting.
@@ -43,11 +50,15 @@
 
 .EXAMPLE
     ./install.ps1 -Target C:\code\my-project
-    AGENTS.md and standards/ only.
+    AGENTS.md and .agents/skills/ only.
 
 .EXAMPLE
     ./install.ps1 -Target ../my-project -Adapters claude
-    Also writes .claude/skills/.
+    Also writes .claude/skills/ pointer stubs.
+
+.EXAMPLE
+    ./install.ps1 -Target ../my-project -Upgrade
+    Migrate an older install to the current layout.
 
 .EXAMPLE
     ./install.ps1 -User -Yes
@@ -66,6 +77,7 @@ param(
     [string[]]$Stacks,
 
     [switch]$Check,
+    [switch]$Upgrade,
 
     [Alias('y')]
     [switch]$Yes,
@@ -80,6 +92,17 @@ Set-StrictMode -Version Latest
 $RepoRoot = $PSScriptRoot
 $BuildScript = Join-Path $RepoRoot 'build.ps1'
 if (-not (Test-Path $BuildScript)) { throw 'Missing build.ps1 next to install.ps1.' }
+
+if ($Check -and $Upgrade) {
+    Write-Error '-Check reports and -Upgrade rewrites. Choose one.'
+    exit 2
+}
+# An upgrade replaces the files it manages by definition, so asking again for
+# -Force would only be a way to get it half done.
+if ($Upgrade) { $Force = [switch]$true }
+
+# Both modes read an existing install rather than prompting for a new one.
+$inspect = $Check -or $Upgrade
 
 # Accept both -Adapters claude,cursor (array) and -Adapters "claude,cursor" (one
 # string, which is how "pwsh -File" passes a comma list). build.ps1 validates
@@ -133,8 +156,7 @@ $ToolLabels = @{
 }
 
 $AdapterNotes = [ordered]@{
-    claude  = '.claude/skills/    model-decided skill loading'
-    cursor  = '.cursor/rules/     agent-requested rule loading'
+    claude  = '.claude/skills/    Claude Code does not read .agents/skills/'
     copilot = '.github/           glob-attached instructions'
 }
 
@@ -243,14 +265,16 @@ elseif ($User) {
 else {
     $projectStacks = @(Get-ProjectStacks)
     if ($projectStacks.Count -gt 0) {
-        if (-not $Check) {
+        # -Check and -Upgrade override this from the install's own stamp, so
+        # printing it here would announce a set that is about to be discarded.
+        if (-not $inspect) {
             Write-Host "Detected stacks: $($projectStacks -join ', ')" -ForegroundColor Cyan
             Write-Host ''
         }
         $stackList = $projectStacks -join ','
     }
     else {
-        if (-not $Check) {
+        if (-not $inspect) {
             Write-Host 'No stack markers found. Installing universal standards only.'
             Write-Host ''
         }
@@ -258,12 +282,14 @@ else {
     }
 }
 
-# --- Check mode -----------------------------------------------------------
-# Compares an existing install against the current standards. Reuses the normal
-# staging build and path mappings, and only swaps copying for comparing, so the
-# two modes cannot disagree about where a file belongs.
+# --- Check and upgrade modes ----------------------------------------------
+# Both read an existing install instead of prompting for a new one: the adapter
+# set and the stack set come from what is actually on disk. Both reuse the normal
+# staging build and path mappings, so no mode can disagree with another about
+# where a file belongs. -Check then compares instead of copying; -Upgrade copies
+# with -Force and prunes what is left over afterwards.
 
-if ($Check) {
+if ($inspect) {
     $anyInstalled = @(
         (Join-Path $destination 'AGENTS.md'),
         (Join-Path $destination '.claude/CLAUDE.md'),
@@ -282,8 +308,10 @@ if ($Check) {
     if (-not $adaptersExplicit) {
         $inferred = [System.Collections.Generic.List[string]]::new()
         if (Test-Path (Join-Path $destination '.claude/skills')) { $inferred.Add('claude') }
-        if (Test-Path (Join-Path $destination '.cursor/rules')) { $inferred.Add('cursor') }
         if (Test-Path (Join-Path $destination '.github/copilot-instructions.md')) { $inferred.Add('copilot') }
+        # .cursor/rules is a retired adapter, not a current one: Cursor reads
+        # .agents/skills natively now. Inferring 'cursor' here would fail the
+        # build, so it is only noted, and the directory is pruned on upgrade.
         $Adapters = if ($inferred.Count -gt 0) { @($inferred) } else { @('none') }
     }
 
@@ -305,10 +333,17 @@ if ($Check) {
         }
     }
 
-    # The current version is read from the staging build below, so check mode
+    # The current version is read from the staging build below, so each mode
     # generates exactly once.
-    Write-Host "Checking: $label" -ForegroundColor Cyan
-    Write-Host "Adapters checked: $($Adapters -join ',')"
+    if ($Upgrade) {
+        Write-Host "Upgrading: $label" -ForegroundColor Cyan
+        Write-Host "Adapters kept: $($Adapters -join ',')"
+        Write-Host "Stacks kept:   $stackList"
+    }
+    else {
+        Write-Host "Checking: $label" -ForegroundColor Cyan
+        Write-Host "Adapters checked: $($Adapters -join ',')"
+    }
     Write-Host ''
 
     if ($User) {
@@ -349,12 +384,13 @@ if ($User) {
     $adapterList = if ($selectedTools -contains 'claude') { 'claude' } else { 'none' }
 }
 else {
-    Write-Host 'Every tool above reads AGENTS.md, so no tool-specific files are required.'
+    Write-Host 'Codex, Cursor, Copilot and OpenCode load .agents/skills/ natively, and every'
+    Write-Host 'other tool reads AGENTS.md, so no tool-specific files are required.'
     Write-Host ''
 
     if (-not $adaptersExplicit) {
-        Write-Host 'Optional adapters add directories to the repository, in exchange for'
-        Write-Host 'on-demand loading rather than one always-present table:'
+        Write-Host 'Optional adapters add a directory that points at .agents/skills/, for the'
+        Write-Host "two tools that need one. They never copy a standard's text:"
         Write-Host ''
         $offered = @($AdapterNotes.Keys)
         for ($i = 0; $i -lt $offered.Count; $i++) {
@@ -401,19 +437,23 @@ else {
 
 }
 
-if ($Check) { $adapterList = $Adapters -join ',' }
+if ($inspect) { $adapterList = $Adapters -join ',' }
 else {
     Write-Host "Installing to: $label" -ForegroundColor Cyan
     if ($User) {
         Write-Host "Tools: $($selectedTools -join ', ')"
     }
     elseif ($adapterList -in '', 'none') {
-        Write-Host 'Contents: AGENTS.md + standards/ only'
+        Write-Host 'Contents: AGENTS.md + .agents/skills/ only'
     }
     else {
-        Write-Host "Contents: AGENTS.md + standards/ + adapters ($adapterList)"
+        Write-Host "Contents: AGENTS.md + .agents/skills/ + adapters ($adapterList)"
     }
     if ($DryRun) { Write-Host 'Dry run: no files will be written.' -ForegroundColor Yellow }
+    Write-Host ''
+}
+if ($Upgrade -and $DryRun) {
+    Write-Host 'Dry run: nothing will be written or removed.' -ForegroundColor Yellow
     Write-Host ''
 }
 
@@ -427,7 +467,11 @@ try {
     # 6>$null suppresses build.ps1's Write-Host progress. A build failure still
     # surfaces, because both scripts set $ErrorActionPreference to Stop.
     $effectiveAdapters = if ($adapterList) { $adapterList } else { 'none' }
-    & $BuildScript -OutputRoot $staging -Adapters $effectiveAdapters -Stacks $stackList 6>$null
+    # A user install has no project root, so the skills land in ~/.agents/skills
+    # and every generated reference has to say so.
+    $skillsPath = if ($User) { '~/.agents/skills' } else { '.agents/skills' }
+    & $BuildScript -OutputRoot $staging -Adapters $effectiveAdapters -Stacks $stackList `
+        -SkillsPath $skillsPath 6>$null
 
     # Map staged relative paths onto destination relative paths.
     # Project installs are a straight copy. User installs relocate into the
@@ -435,15 +479,18 @@ try {
     $mappings = [System.Collections.Generic.List[object]]::new()
 
     if ($User) {
+        # One skills tree for everyone. ~/.agents/skills is the documented
+        # user-level location for Codex, Cursor and Copilot/VS Code alike, so this
+        # is written whichever of them is present.
+        $mappings.Add(@{ From = '.agents/skills'; To = '.agents/skills' })
         if ($selectedTools -contains 'claude') {
+            # Claude Code reads neither ~/.agents/skills nor AGENTS.md at user
+            # level, so it gets the stubs plus CLAUDE.md as always-on context.
             $mappings.Add(@{ From = '.claude/skills'; To = '.claude/skills' })
-            # Claude Code reads ~/.claude/CLAUDE.md as global always-on context.
             $mappings.Add(@{ From = 'AGENTS.md'; To = '.claude/CLAUDE.md' })
-            $mappings.Add(@{ From = 'standards'; To = '.claude/standards' })
         }
         if ($selectedTools -contains 'codex') {
             $mappings.Add(@{ From = 'AGENTS.md'; To = '.codex/AGENTS.md' })
-            $mappings.Add(@{ From = 'standards'; To = '.codex/standards' })
         }
     }
     else {
@@ -459,10 +506,21 @@ try {
     $script:missing = 0
     $script:differs = 0
     $script:same = 0
+    # Every destination path the current build accounts for. The upgrade pruner
+    # needs it to tell a file that still belongs from one an earlier version left
+    # behind. Ordinal comparison, because these are paths, not prose.
+    $script:expected = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase)
 
     function Copy-One {
-        param([string]$SourceFile, [string]$DestFile)
+        param([string]$SourceFile, [string]$DestFile, [string]$DestRelative)
 
+        # Recorded before any early return, so the set is complete in every mode.
+        # Destination-relative, because that is the one spelling of a path both
+        # this function and the leftover walk can derive without normalising
+        # anything: an absolute comparison breaks the moment one side expands an
+        # 8.3 path component and the other does not.
+        $script:expected.Add(($DestRelative -replace '\\', '/')) | Out-Null
         if ($Check) {
             if (-not (Test-Path $DestFile)) {
                 Write-Host "  missing  $DestFile" -ForegroundColor Red; $script:missing++
@@ -498,11 +556,11 @@ try {
             $sourceFull = (Resolve-Path $source).Path
             Get-ChildItem $source -Recurse -File | ForEach-Object {
                 $rel = $_.FullName.Substring($sourceFull.Length).TrimStart('\', '/')
-                Copy-One $_.FullName (Join-Path $destination (Join-Path $map.To $rel))
+                Copy-One $_.FullName (Join-Path $destination (Join-Path $map.To $rel)) "$($map.To)/$rel"
             }
         }
         else {
-            Copy-One $source (Join-Path $destination $map.To)
+            Copy-One $source (Join-Path $destination $map.To) $map.To
         }
     }
 }
@@ -533,4 +591,113 @@ Write-Host ''
 Write-Host "$script:written file(s) $(if ($DryRun) { 'would be written' } else { 'written' }), $script:skipped skipped." -ForegroundColor Green
 if ($script:skipped -gt 0 -and -not $Force) {
     Write-Host 'Re-run with -Force to overwrite existing files.' -ForegroundColor Yellow
+}
+
+# --- Leftovers ------------------------------------------------------------
+# Only these directories are ever written by this installer, so only these are
+# considered. Within them, only a file whose name corresponds to a source
+# standard is treated as ours: a skill or rule you wrote yourself sits in the
+# same directory and must survive an upgrade untouched.
+
+$managedDirs = @(
+    'standards', '.agents/skills', '.claude/skills', '.claude/standards',
+    '.codex/standards', '.cursor/rules', '.github/instructions'
+)
+
+# Every source standard, including _core and those excluded by stack, so a file
+# left behind by a stack change is still recognised as ours rather than yours.
+$sourceNames = @(Get-ChildItem (Join-Path $RepoRoot 'standards') -Filter '*.md' |
+    ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.Name) })
+
+$stale = [System.Collections.Generic.List[string]]::new()
+$foreign = [System.Collections.Generic.List[string]]::new()
+
+foreach ($md in $managedDirs) {
+    $dir = Join-Path $destination $md
+    if (-not (Test-Path $dir -PathType Container)) { continue }
+    foreach ($file in Get-ChildItem $dir -Recurse -File) {
+        # GetRelativePath rather than trimming a resolved prefix: on Windows
+        # Resolve-Path expands an 8.3 component that Get-ChildItem leaves short,
+        # and the two lengths then disagree.
+        $rel = [System.IO.Path]::GetRelativePath($dir, $file.FullName) -replace '\\', '/'
+        if ($script:expected.Contains("$md/$rel")) { continue }
+
+        # The standard's name is the directory for a skill, the basename otherwise.
+        $name = switch -Regex ($rel) {
+            '/.*/'                     { ''; break }
+            '^(.+)/SKILL\.md$'         { $Matches[1]; break }
+            '/'                        { ''; break }
+            '^(.+)\.instructions\.md$' { $Matches[1]; break }
+            '^(.+)\.[^.]+$'            { $Matches[1]; break }
+            default                    { '' }
+        }
+        if ($name -and $sourceNames -contains $name) { $stale.Add("$md/$rel") }
+        else { $foreign.Add("$md/$rel") }
+    }
+}
+
+if ($foreign.Count -gt 0) {
+    Write-Host ''
+    Write-Host 'In a directory this installer manages, but not generated by it:' -ForegroundColor DarkGray
+    foreach ($o in $foreign) { Write-Host "  $destination/$o" }
+    Write-Host 'Left untouched.'
+}
+
+if ($stale.Count -eq 0) {
+    if ($Upgrade) {
+        Write-Host ''
+        Write-Host 'Nothing left over. The install is on the current layout.' -ForegroundColor Green
+    }
+}
+elseif (-not $Upgrade) {
+    Write-Host ''
+    Write-Host 'Left over from an earlier layout, no longer referenced by anything:' -ForegroundColor Yellow
+    foreach ($o in $stale) { Write-Host "  $destination/$o" }
+    $how = if ($User) { '-User' } else { "-Target $Target" }
+    Write-Host "Remove them with: ./install.ps1 $how -Upgrade"
+}
+else {
+    Write-Host ''
+    Write-Host 'Left over from an earlier layout, to remove:' -ForegroundColor Yellow
+    foreach ($o in $stale) { Write-Host "  - $destination/$o" }
+
+    $remove = $true
+    if ($DryRun) {
+        $remove = $false
+        Write-Host "$($stale.Count) file(s) would be removed."
+    }
+    elseif (-not $Yes -and -not [Console]::IsInputRedirected) {
+        $confirm = Read-Host "Remove these $($stale.Count) file(s)? [y/N]"
+        if ($confirm -notin 'y', 'Y', 'yes', 'YES') {
+            $remove = $false
+            Write-Host 'Left in place.'
+        }
+    }
+
+    if ($remove) {
+        foreach ($o in $stale) {
+            Remove-Item -LiteralPath (Join-Path $destination $o) -Force -ErrorAction SilentlyContinue
+        }
+        # Remove-Item on a directory only succeeds here when it is empty, so a
+        # directory still holding something of yours survives without needing a
+        # second check for it. Deepest first, then the parents the managed
+        # directories sat in.
+        foreach ($md in $managedDirs) {
+            $dir = Join-Path $destination $md
+            if (-not (Test-Path $dir -PathType Container)) { continue }
+            $subdirs = @(Get-ChildItem $dir -Recurse -Directory | Sort-Object { $_.FullName.Length } -Descending)
+            foreach ($d in $subdirs + @(Get-Item $dir)) {
+                if (-not (Get-ChildItem $d.FullName -Force)) {
+                    Remove-Item -LiteralPath $d.FullName -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+        foreach ($md in '.cursor', '.claude', '.codex', '.github', '.agents') {
+            $dir = Join-Path $destination $md
+            if ((Test-Path $dir -PathType Container) -and -not (Get-ChildItem $dir -Force)) {
+                Remove-Item -LiteralPath $dir -Force -ErrorAction SilentlyContinue
+            }
+        }
+        Write-Host "$($stale.Count) file(s) removed."
+    }
 }

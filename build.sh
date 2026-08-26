@@ -3,25 +3,28 @@
 #
 # POSIX sh. Functionally identical to build.ps1 and emits byte-identical output.
 #
-# By default only AGENTS.md and standards/ are emitted. That is all any supported
-# tool needs, because AGENTS.md is read natively by Codex, Cursor, Copilot,
-# Claude Code, Gemini CLI, Aider, Windsurf, Zed and others.
+# Output is AGENTS.md plus .agents/skills/<name>/SKILL.md, one skill per
+# standard. .agents/skills/ is the vendor-neutral Agent Skills location, read
+# natively by Codex, Cursor, Copilot/VS Code, OpenCode and others. A tool with no
+# skill loader reads AGENTS.md and opens the path from its trigger table, so
+# there is exactly one copy of every standard.
 #
-# Tool-specific directories (.claude/, .cursor/, .github/) are emitted only when
-# named in --adapters. They buy on-demand loading at the cost of extra
-# directories in the repository.
+# Adapters cover the two tools that need something else, and are off by default.
+# Claude Code reads only .claude/skills/; Copilot additionally supports
+# glob-attached instructions. Both emit pointers to the .agents/skills/ copy,
+# never a second copy of the text.
 #
 # Usage:
 #   ./build.sh --out DIR [options]
 #
 # Options:
-#   --adapters LIST   Optional adapters: claude,copilot,cursor,all,none (default: none).
-#   --stacks LIST     Which stacks to include: all, any, dotnet, ... (default: all).
-#                     A standard with "stack: any" is always included.
-#   --no-standards    Skip emitting standards/. Only safe when every selected
-#                     adapter inlines the full text, because AGENTS.md refers to
-#                     standards/ by path.
-#   -h, --help        Show this help.
+#   --adapters LIST     Optional adapters: claude,copilot,all,none (default: none).
+#   --stacks LIST       Which stacks to include: all, any, dotnet, ... (default: all).
+#                       A standard with "stack: any" is always included.
+#   --skills-path PATH  Where AGENTS.md and the adapters say the skills live
+#                       (default: .agents/skills). A user-level install passes
+#                       ~/.agents/skills, because there is no project root.
+#   -h, --help          Show this help.
 
 set -eu
 
@@ -30,15 +33,16 @@ STANDARDS_DIR="$REPO_ROOT/standards"
 OUTPUT_ROOT=""
 ADAPTERS="none"
 STACKS="all"
-NO_STANDARDS=0
+SKILLS_PATH=".agents/skills"
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --out) shift; [ $# -gt 0 ] || { echo "--out needs a directory" >&2; exit 2; }; OUTPUT_ROOT="$1" ;;
         --adapters) shift; [ $# -gt 0 ] || { echo "--adapters needs a value" >&2; exit 2; }; ADAPTERS="$1" ;;
         --stacks) shift; [ $# -gt 0 ] || { echo "--stacks needs a value" >&2; exit 2; }; STACKS="$1" ;;
-        --no-standards) NO_STANDARDS=1 ;;
-        -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --skills-path) shift; [ $# -gt 0 ] || { echo "--skills-path needs a value" >&2; exit 2; }
+                       SKILLS_PATH=$(echo "$1" | sed 's|/*$||') ;;
+        -h|--help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
     shift
@@ -50,9 +54,11 @@ done
 mkdir -p "$OUTPUT_ROOT"
 OUTPUT_ROOT=$(CDPATH='' cd -- "$OUTPUT_ROOT" && pwd)
 
-# Only these three have a file-based, on-demand loading mechanism worth an
-# adapter. Every other tool reads AGENTS.md, which is always emitted.
-KNOWN_ADAPTERS="claude copilot cursor"
+# Everything else reads .agents/skills/ natively, or falls back to the AGENTS.md
+# table. Only these two need a directory of their own: Claude Code does not read
+# .agents/skills/ at all, and Copilot has a glob-attach mechanism that skills do
+# not cover.
+KNOWN_ADAPTERS="claude copilot"
 
 REQUESTED=$(echo "$ADAPTERS" | tr ',' ' ' | tr '[:upper:]' '[:lower:]')
 for a in $REQUESTED; do
@@ -270,19 +276,24 @@ GENERATED_NOTICE="<!-- GENERATED FILE. Do not edit.
      Source: standards/*.md in the agent-framework repository.
      Standards version: $STANDARDS_VERSION | stacks: $STACKS_STAMP -->"
 
-# --- standards/ -----------------------------------------------------------
-# AGENTS.md refers to these by path, so they are always emitted. Skipped when
-# generating in place, because the source already lives there.
+# --- .agents/skills/ ------------------------------------------------------
+# The canonical copy, and the only one. Agent Skills is an open format, so a
+# single tree serves every tool with a skill loader; AGENTS.md points the rest at
+# the same paths.
+#
+# Frontmatter carries only the two fields the spec requires. "stack" and "globs"
+# are build-time inputs to this script, not part of the format, so they are not
+# passed through. A standard excluded by stack is never emitted, or the target
+# gains rules for a language it does not use.
 
-if [ "$NO_STANDARDS" -eq 0 ] && [ "$OUTPUT_ROOT" != "$REPO_ROOT" ]; then
-    # _core.md plus the stack-matching standards only. A standard excluded by
-    # stack must not reach the target, or the repository gains a file for a
-    # language it does not use.
-    write_generated "standards/_core.md" < "$STANDARDS_DIR/_core.md"
-    for n in $STANDARD_NAMES; do
-        write_generated "standards/$n.md" < "$STANDARDS_DIR/$n.md"
-    done
-fi
+for n in $STANDARD_NAMES; do
+    {
+        printf -- '---\nname: %s\ndescription: %s\n---\n\n' \
+            "$n" "$(frontmatter_value "$STANDARDS_DIR/$n.md" description)"
+        printf '%s\n\n' "$GENERATED_NOTICE"
+        standard_body "$STANDARDS_DIR/$n.md"
+    } | write_generated ".agents/skills/$n/SKILL.md"
+done
 
 # --- AGENTS.md ------------------------------------------------------------
 # The vendor-neutral entry point. Read natively by Codex, Cursor, Copilot,
@@ -313,7 +324,7 @@ Load by trigger. When two or more triggers match, load all of them.
 |---|---|---|
 EOF
     for n in $STANDARD_NAMES; do
-        printf '| `%s` | %s | `standards/%s.md` |\n' "$n" "$(get_trigger "$n")" "$n"
+        printf '| `%s` | %s | `%s/%s/SKILL.md` |\n' "$n" "$(get_trigger "$n")" "$SKILLS_PATH" "$n"
     done
     cat <<'EOF'
 
@@ -332,16 +343,23 @@ EOF
 } | write_generated 'AGENTS.md'
 
 # --- Optional adapters ----------------------------------------------------
-# Each adds a tool-specific directory. Off unless explicitly requested, because
-# AGENTS.md alone is sufficient and keeps the repository clean.
+# Each adds a tool-specific directory. Off unless explicitly requested. Neither
+# repeats a standard's text: they carry the discovery metadata their tool needs
+# and point at the .agents/skills/ copy.
 
-# Claude Code: the only target with model-decided progressive disclosure.
+# Claude Code reads .claude/skills/ only, so without this adapter it falls back
+# to the AGENTS.md table like any tool with no loader. The stub gives it a real
+# skill entry: name and description are what drive activation, and the body is
+# one instruction to read the canonical file.
 if has_adapter claude; then
     for n in $STANDARD_NAMES; do
         {
             printf -- '---\nname: %s\ndescription: %s\n---\n\n' \
                 "$n" "$(frontmatter_value "$STANDARDS_DIR/$n.md" description)"
-            standard_body "$STANDARDS_DIR/$n.md"
+            printf '%s\n\n' "$GENERATED_NOTICE"
+            printf 'Read `%s/%s/SKILL.md` in full before starting this work, then\n' \
+                "$SKILLS_PATH" "$n"
+            printf 'follow it. That file is the standard; this one only points at it.\n'
         } | write_generated ".claude/skills/$n/SKILL.md"
     done
 fi
@@ -363,7 +381,7 @@ triggers match, read all of them.
 |---|---|
 EOF
         for n in $STANDARD_NAMES; do
-            printf '| `standards/%s.md` | %s |\n' "$n" "$(get_trigger "$n")"
+            printf '| `%s/%s/SKILL.md` | %s |\n' "$SKILLS_PATH" "$n" "$(get_trigger "$n")"
         done
     } | write_generated '.github/copilot-instructions.md'
 
@@ -372,29 +390,16 @@ EOF
         [ -n "$globs" ] || continue
         {
             printf -- "---\napplyTo: '%s'\n---\n%s\n\n" "$globs" "$GENERATED_NOTICE"
-            standard_body "$STANDARDS_DIR/$n.md"
+            printf 'Read `%s/%s/SKILL.md` in full before editing these files, then\n' \
+                "$SKILLS_PATH" "$n"
+            printf 'follow it. That file is the standard; this one only points at it.\n'
         } | write_generated ".github/instructions/$n.instructions.md"
-    done
-fi
-
-# Cursor supports agent-requested rules: no globs plus alwaysApply false means
-# the model decides from the description.
-if has_adapter cursor; then
-    for n in $STANDARD_NAMES; do
-        globs=$(frontmatter_value "$STANDARDS_DIR/$n.md" globs)
-        {
-            printf -- '---\ndescription: %s\n' \
-                "$(frontmatter_value "$STANDARDS_DIR/$n.md" description)"
-            if [ -n "$globs" ]; then printf 'globs: %s\n' "$globs"; else printf 'globs:\n'; fi
-            printf 'alwaysApply: false\n---\n\n'
-            standard_body "$STANDARDS_DIR/$n.md"
-        } | write_generated ".cursor/rules/$n.mdc"
     done
 fi
 
 echo ""
 if [ -z "$SELECTED" ]; then
-    echo "Done. AGENTS.md + standards/ only, no tool-specific directories."
+    printf 'Done. AGENTS.md + %s/ only, no tool-specific directories.\n' "$SKILLS_PATH"
 else
     printf 'Done. Adapters: %s\n' "$(echo "$SELECTED" | tr -s ' ' | sed 's/ /, /g')"
 fi

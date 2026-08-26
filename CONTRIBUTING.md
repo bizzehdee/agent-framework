@@ -7,7 +7,7 @@ Maintainer notes. For installing and using the framework, see [README.md](README
 ```
 standards/*.md          Source of truth. The only files you edit.
   _core.md              Always-on rules, injected inline into every output.
-  <name>.md             One standard per concern, loaded on demand.
+  <name>.md             One standard per concern, becomes one skill.
 
 build.ps1  build.sh     Generate into a directory.
 install.ps1  install.sh Detect, then generate and copy into a destination.
@@ -40,6 +40,12 @@ stack: any
 | `globs` | No | File patterns for glob-attached adapters. Empty means agent-requested only. |
 | `stack` | No | `any` (default) or a comma-separated stack list. |
 
+`name` and `description` are also the two fields the [Agent Skills
+specification](https://agentskills.io/specification) requires, and they are the only
+frontmatter that reaches a generated `SKILL.md`. `globs` and `stack` are inputs to
+the build, not part of the format, so they are not passed through. Keep
+`description` under the spec's 1024-character cap; the suite asserts it.
+
 Both generators validate this and fail on a mismatch, so a renamed file cannot
 silently produce a broken skill.
 
@@ -57,14 +63,45 @@ regression test for exactly this.
 
 ## Adding a tool
 
-A tool that reads `AGENTS.md` already works and needs no code. Add an adapter only
-if the tool has its own on-demand loading mechanism.
+Most tools need no code at all. A tool that reads `.agents/skills/` is already
+served by the default output, and one that reads `AGENTS.md` finds every standard
+through its trigger table.
+
+An adapter is warranted only when a tool reads neither. There are two:
+
+| Adapter | Why it exists |
+|---|---|
+| `claude` | Claude Code reads `.claude/skills/` and does not look in `.agents/skills/`. |
+| `copilot` | `applyTo` glob attachment is passive, which no skill loader offers. |
+
+An adapter file carries the discovery metadata its tool needs and points at the
+`.agents/skills/` copy. It must never repeat a standard's text — one copy is the
+whole point of the layout, and the suite fails an adapter file over 15 lines.
 
 1. Add a branch to `build.ps1` and the matching branch to `build.sh`, and add the
    name to `$KnownAdapters` / `KNOWN_ADAPTERS`.
 2. Add a probe to `Find-Tool` / `detect_tool`, a label to `$ToolLabels` /
    `tool_label`, an entry to `$AdapterNotes` / `adapter_note`, and the name to
    `$candidates` / `CANDIDATES`.
+3. Use `$SkillsPath` / `$SKILLS_PATH` for the pointer, never a hardcoded
+   `.agents/skills`. A user install passes `~/.agents/skills`, and a pointer that
+   ignores it resolves to nothing.
+
+## Changing the output layout
+
+`--upgrade` is what carries existing installs across a layout change, so it needs
+one thing from you: `MANAGED_DIRS` / `$managedDirs` in the installers must list
+every directory the framework has *ever* written, not just the current ones. A
+directory dropped from that list becomes invisible to the pruner, and its files
+stay behind forever.
+
+Retire a directory by leaving it in the list and removing the code that writes it.
+`.cursor/rules` is the worked example.
+
+The pruner decides ownership by name: a file is removable only when its name
+component matches something in `standards/*.md`. That is why a renamed standard
+leaves its old file behind — reported, never deleted. If a rename needs migrating,
+map the old name to the new one explicitly rather than loosening the rule.
 
 ## Adding a stack
 
@@ -96,9 +133,10 @@ implementations agree, so duplicating the assertions would let the copies drift.
 `pwsh` is optional — tests needing it report as skipped, never as passed.
 
 Covers parsing, source and frontmatter validation, argument rejection, default
-output shape, trigger-table correctness, output hygiene, stack filtering and
-detection, install idempotency, `--force`, `--dry-run`, adapter opt-in, check mode,
-and cross-shell agreement.
+output shape, Agent Skills spec conformance, trigger-table correctness, output
+hygiene, stack filtering and detection, install idempotency, `--force`,
+`--dry-run`, adapter opt-in, `--skills-path` threading, check mode, upgrade
+migration and pruning, and cross-shell agreement.
 
 CI runs the suite on Linux, where `/bin/sh` is dash, and Windows, where it is the sh
 supplied by Git for Windows.

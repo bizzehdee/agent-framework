@@ -4,24 +4,30 @@
 # POSIX sh. Behaviourally identical to install.ps1.
 #
 # A project install adds two entries and nothing else:
-#   AGENTS.md     the always-on rules and the standards trigger table
-#   standards/    one file per standard, read only when its trigger matches
+#   AGENTS.md        the always-on rules and the standards trigger table
+#   .agents/skills/  one skill per standard, loaded only when its trigger matches
 #
-# Every supported tool reads AGENTS.md, so that is a complete installation.
-# Tool-specific directories (.claude/, .cursor/, .github/) are never written
-# unless you ask for them with --adapters.
+# .agents/skills/ is the vendor-neutral Agent Skills location: Codex, Cursor,
+# Copilot/VS Code and OpenCode load it natively, and every other tool reads
+# AGENTS.md and opens the path from its table. One copy serves all of them.
+#
+# Claude Code is the exception - it reads only .claude/skills/ - so --adapters
+# claude writes pointer stubs there. Nothing duplicates a standard's text.
 #
 # Usage:
 #   ./install.sh <target-dir> [options]     Install into a project directory.
 #   ./install.sh --user [options]           Install to user-level config (claude, codex).
 #
 # Options:
-#   --adapters LIST  Add tool-specific directories: claude,copilot,cursor,all,none
+#   --adapters LIST  Add tool-specific directories: claude,copilot,all,none
 #                    (default: none). Passing this skips the prompt.
 #   --stacks LIST    Which stacks to install: all, any, dotnet, python, rust, c-cpp,
 #                    node, go. Default: detected from the target project.
 #   --check          Report whether an existing install matches the current
 #                    standards. Writes nothing. Exit 1 if it is out of date.
+#   --upgrade        Bring an existing install to the current layout: infer what
+#                    was installed, regenerate it, and remove what earlier
+#                    versions left behind. Implies --force.
 #   --yes, -y        Accept the defaults without prompting.
 #   --force          Overwrite existing files.
 #   --dry-run        Report what would be written without changing the destination.
@@ -30,8 +36,9 @@
 # When stdin is not a terminal, the defaults are used without prompting.
 #
 # Examples:
-#   ./install.sh ../my-project                        AGENTS.md + standards/ only
-#   ./install.sh ../my-project --adapters claude      also .claude/skills/
+#   ./install.sh ../my-project                        AGENTS.md + .agents/skills/
+#   ./install.sh ../my-project --adapters claude      also .claude/skills/ stubs
+#   ./install.sh ../my-project --upgrade              migrate an older install
 #   ./install.sh --user -y                            global setup, no repo files
 
 set -eu
@@ -47,6 +54,7 @@ ADAPTERS_EXPLICIT=0
 STACKS="all"
 STACKS_EXPLICIT=0
 CHECK=0
+UPGRADE=0
 ASSUME_YES=0
 FORCE=0
 DRY_RUN=0
@@ -59,10 +67,11 @@ while [ $# -gt 0 ]; do
         --stacks) shift; [ $# -gt 0 ] || { echo "--stacks needs a value" >&2; exit 2; }
                   STACKS="$1"; STACKS_EXPLICIT=1 ;;
         --check) CHECK=1 ;;
+        --upgrade) UPGRADE=1 ;;
         -y|--yes) ASSUME_YES=1 ;;
         --force) FORCE=1 ;;
         --dry-run) DRY_RUN=1 ;;
-        -h|--help) sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) echo "Unknown option: $1" >&2; exit 2 ;;
         *) [ -z "$TARGET" ] || { echo "Unexpected argument: $1" >&2; exit 2; }; TARGET="$1" ;;
     esac
@@ -75,6 +84,16 @@ fi
 if [ "$USER_SCOPE" -eq 0 ] && [ -z "$TARGET" ]; then
     echo "Usage: ./install.sh <target-dir> [options]   or   ./install.sh --user [options]" >&2; exit 2
 fi
+if [ "$CHECK" -eq 1 ] && [ "$UPGRADE" -eq 1 ]; then
+    echo "--check reports and --upgrade rewrites. Choose one." >&2; exit 2
+fi
+# An upgrade replaces the files it manages by definition, so asking again for
+# --force would only be a way to get it half done.
+[ "$UPGRADE" -eq 0 ] || FORCE=1
+
+# Both modes read an existing install rather than prompting for a new one.
+INSPECT=0
+[ "$CHECK" -eq 0 ] && [ "$UPGRADE" -eq 0 ] || INSPECT=1
 
 HOME_DIR="${HOME:-${USERPROFILE:-}}"
 
@@ -214,8 +233,7 @@ tool_label() {
 
 adapter_note() {
     case "$1" in
-        claude)  echo ".claude/skills/    model-decided skill loading" ;;
-        cursor)  echo ".cursor/rules/     agent-requested rule loading" ;;
+        claude)  echo ".claude/skills/    Claude Code does not read .agents/skills/" ;;
         copilot) echo ".github/           glob-attached instructions" ;;
     esac
 }
@@ -229,11 +247,13 @@ if [ "$STACKS_EXPLICIT" -eq 0 ]; then
     else
         DETECTED_STACKS=$(detect_stacks)
         if [ -n "$DETECTED_STACKS" ]; then
-            [ "$CHECK" -eq 1 ] || printf 'Detected stacks: %s\n\n' \
+            # --check and --upgrade override this from the install's own stamp, so
+            # printing it here would announce a set that is about to be discarded.
+            [ "$INSPECT" -eq 1 ] || printf 'Detected stacks: %s\n\n' \
                 "$(echo "$DETECTED_STACKS" | tr ' ' ',' | sed 's/,/, /g')"
             STACKS=$(echo "$DETECTED_STACKS" | tr ' ' ',')
         else
-            if [ "$CHECK" -eq 0 ]; then
+            if [ "$INSPECT" -eq 0 ]; then
                 echo "No stack markers found. Installing universal standards only."
                 echo ""
             fi
@@ -242,12 +262,14 @@ if [ "$STACKS_EXPLICIT" -eq 0 ]; then
     fi
 fi
 
-# --- Check mode -----------------------------------------------------------
-# Compares an existing install against the current standards. Reuses the normal
-# staging build and path mappings, and only swaps copying for comparing, so the
-# two modes cannot disagree about where a file belongs.
+# --- Check and upgrade modes ----------------------------------------------
+# Both read an existing install instead of prompting for a new one: the adapter
+# set and the stack set come from what is actually on disk. Both reuse the normal
+# staging build and path mappings, so no mode can disagree with another about
+# where a file belongs. --check then compares instead of copying; --upgrade
+# copies with --force and prunes what is left over afterwards.
 
-if [ "$CHECK" -eq 1 ]; then
+if [ "$INSPECT" -eq 1 ]; then
     [ -e "$DESTINATION/AGENTS.md" ] || [ -e "$DESTINATION/.claude/CLAUDE.md" ] || \
     [ -e "$DESTINATION/.codex/AGENTS.md" ] || {
         echo "Nothing installed at $LABEL." >&2
@@ -259,8 +281,10 @@ if [ "$CHECK" -eq 1 ]; then
     if [ "$ADAPTERS_EXPLICIT" -eq 0 ]; then
         ADAPTERS=""
         [ -d "$DESTINATION/.claude/skills" ] && ADAPTERS="$ADAPTERS,claude"
-        [ -d "$DESTINATION/.cursor/rules" ] && ADAPTERS="$ADAPTERS,cursor"
         [ -f "$DESTINATION/.github/copilot-instructions.md" ] && ADAPTERS="$ADAPTERS,copilot"
+        # .cursor/rules is a retired adapter, not a current one: Cursor reads
+        # .agents/skills natively now. Inferring "cursor" here would fail the
+        # build, so it is only noted, and the directory is pruned on upgrade.
         ADAPTERS=$(echo "$ADAPTERS" | sed 's/^,//')
         [ -n "$ADAPTERS" ] || ADAPTERS="none"
     fi
@@ -280,10 +304,16 @@ if [ "$CHECK" -eq 1 ]; then
         [ -z "$STAMPED_STACKS" ] || STACKS="$STAMPED_STACKS"
     fi
 
-    # The current version is read from the staging build below, so check mode
+    # The current version is read from the staging build below, so each mode
     # generates exactly once.
-    echo "Checking: $LABEL"
-    printf 'Adapters checked: %s\n\n' "$ADAPTERS"
+    if [ "$UPGRADE" -eq 1 ]; then
+        echo "Upgrading: $LABEL"
+        printf 'Adapters kept: %s\n' "$ADAPTERS"
+        printf 'Stacks kept:   %s\n\n' "$STACKS"
+    else
+        echo "Checking: $LABEL"
+        printf 'Adapters checked: %s\n\n' "$ADAPTERS"
+    fi
 
     if [ "$USER_SCOPE" -eq 1 ]; then
         SELECTED_TOOLS=""
@@ -319,14 +349,15 @@ if [ "$USER_SCOPE" -eq 1 ]; then
     ADAPTER_LIST=""
     case " $SELECTED_TOOLS " in *" claude "*) ADAPTER_LIST="claude" ;; esac
 else
-    echo "Every tool above reads AGENTS.md, so no tool-specific files are required."
+    echo "Codex, Cursor, Copilot and OpenCode load .agents/skills/ natively, and every"
+    echo "other tool reads AGENTS.md, so no tool-specific files are required."
     echo ""
 
     if [ "$ADAPTERS_EXPLICIT" -eq 0 ]; then
-        echo "Optional adapters add directories to the repository, in exchange for"
-        echo "on-demand loading rather than one always-present table:"
+        echo "Optional adapters add a directory that points at .agents/skills/, for the"
+        echo "two tools that need one. They never copy a standard's text:"
         echo ""
-        OFFERED="claude cursor copilot"
+        OFFERED="claude copilot"
         idx=0
         for a in $OFFERED; do
             idx=$((idx + 1))
@@ -370,16 +401,20 @@ fi
 
 fi
 
-if [ "$CHECK" -eq 0 ]; then
+if [ "$INSPECT" -eq 0 ]; then
     echo "Installing to: $LABEL"
     if [ "$USER_SCOPE" -eq 1 ]; then
         printf 'Tools: %s\n' "$(echo "$SELECTED_TOOLS" | tr -s ' ' | sed 's/ /, /g')"
     elif [ -z "$ADAPTER_LIST" ] || [ "$ADAPTER_LIST" = "none" ]; then
-        echo "Contents: AGENTS.md + standards/ only"
+        echo "Contents: AGENTS.md + .agents/skills/ only"
     else
-        printf 'Contents: AGENTS.md + standards/ + adapters (%s)\n' "$ADAPTER_LIST"
+        printf 'Contents: AGENTS.md + .agents/skills/ + adapters (%s)\n' "$ADAPTER_LIST"
     fi
     [ "$DRY_RUN" -eq 0 ] || echo "Dry run: no files will be written."
+    echo ""
+fi
+if [ "$UPGRADE" -eq 1 ] && [ "$DRY_RUN" -eq 1 ]; then
+    echo "Dry run: nothing will be written or removed."
     echo ""
 fi
 
@@ -395,8 +430,16 @@ trap 'rm -rf "$STAGING" "$COUNT_DIR"' EXIT INT TERM
 : > "$COUNT_DIR/missing"
 : > "$COUNT_DIR/differs"
 : > "$COUNT_DIR/same"
+# Every destination path the current build accounts for. The upgrade pruner needs
+# it to tell a file that still belongs from one an earlier version left behind.
+: > "$COUNT_DIR/expected"
 
-sh "$BUILD_SCRIPT" --out "$STAGING" --adapters "${ADAPTER_LIST:-none}" --stacks "$STACKS" >/dev/null
+# A user install has no project root, so the skills land in ~/.agents/skills and
+# every generated reference has to say so.
+if [ "$USER_SCOPE" -eq 1 ]; then SKILLS_PATH="~/.agents/skills"; else SKILLS_PATH=".agents/skills"; fi
+
+sh "$BUILD_SCRIPT" --out "$STAGING" --adapters "${ADAPTER_LIST:-none}" --stacks "$STACKS" \
+    --skills-path "$SKILLS_PATH" >/dev/null
 
 # MAPPINGS holds "source-root<TAB>staged-path<TAB>destination-path" lines.
 # Project installs are a straight copy. User installs relocate into the per-tool
@@ -406,15 +449,18 @@ add_mapping() { MAPPINGS="$MAPPINGS$1	$2	$3
 "; }
 
 if [ "$USER_SCOPE" -eq 1 ]; then
+    # One skills tree for everyone. ~/.agents/skills is the documented user-level
+    # location for Codex, Cursor and Copilot/VS Code alike, so this is written
+    # whichever of them is present.
+    add_mapping "$STAGING" ".agents/skills" ".agents/skills"
     case " $SELECTED_TOOLS " in *" claude "*)
+        # Claude Code reads neither ~/.agents/skills nor AGENTS.md at user level,
+        # so it gets the stubs plus CLAUDE.md as global always-on context.
         add_mapping "$STAGING" ".claude/skills" ".claude/skills"
-        # Claude Code reads ~/.claude/CLAUDE.md as global always-on context.
-        add_mapping "$STAGING" "AGENTS.md" ".claude/CLAUDE.md"
-        add_mapping "$STAGING" "standards" ".claude/standards" ;;
+        add_mapping "$STAGING" "AGENTS.md" ".claude/CLAUDE.md" ;;
     esac
     case " $SELECTED_TOOLS " in *" codex "*)
-        add_mapping "$STAGING" "AGENTS.md" ".codex/AGENTS.md"
-        add_mapping "$STAGING" "standards" ".codex/standards" ;;
+        add_mapping "$STAGING" "AGENTS.md" ".codex/AGENTS.md" ;;
     esac
 else
     for entry in $(ls -A "$STAGING"); do
@@ -427,7 +473,11 @@ fi
 # function cannot clobber the caller's loop variables while walking a directory.
 
 copy_one() {
-    cp_src="$1"; cp_dest="$2"
+    cp_src="$1"; cp_dest="$2"; cp_rel="$3"
+    # Recorded before any early return, so the list is complete in every mode.
+    # Destination-relative, because that is the one spelling of a path both this
+    # function and the leftover walk can derive without normalising anything.
+    echo "$cp_rel" >> "$COUNT_DIR/expected"
     if [ "$CHECK" -eq 1 ]; then
         if [ ! -e "$cp_dest" ]; then
             echo "  missing  $cp_dest"; echo x >> "$COUNT_DIR/missing"
@@ -460,10 +510,10 @@ echo "$MAPPINGS" | while IFS='	' read -r map_root map_from map_to; do
     [ -e "$map_src" ] || continue
     if [ -d "$map_src" ]; then
         ( cd "$map_src" && find . -type f -print ) | sed 's|^\./||' | while IFS= read -r rel; do
-            copy_one "$map_src/$rel" "$DESTINATION/$map_to/$rel"
+            copy_one "$map_src/$rel" "$DESTINATION/$map_to/$rel" "$map_to/$rel"
         done
     else
-        copy_one "$map_src" "$DESTINATION/$map_to"
+        copy_one "$map_src" "$DESTINATION/$map_to" "$map_to"
     fi
 done
 
@@ -498,4 +548,105 @@ else
 fi
 if [ "$SKIPPED" -gt 0 ] && [ "$FORCE" -eq 0 ]; then
     echo "Re-run with --force to overwrite existing files."
+fi
+
+# --- Leftovers ------------------------------------------------------------
+# Only these directories are ever written by this installer, so only these are
+# considered. Within them, only a file whose name corresponds to a source
+# standard is treated as ours: a skill or rule you wrote yourself sits in the
+# same directory and must survive an upgrade untouched.
+
+MANAGED_DIRS="standards .agents/skills .claude/skills .claude/standards
+.codex/standards .cursor/rules .github/instructions"
+
+# Every source standard, including _core and those excluded by stack, so a file
+# left behind by a stack change is still recognised as ours rather than yours.
+SOURCE_NAMES=$(for sn in "$REPO_ROOT"/standards/*.md; do basename "$sn" .md; done)
+
+# Collected through files rather than variables: the walk reads find's output on a
+# pipe, so a subshell's assignments would not survive it, and a path holding a
+# space must not be split into two.
+printf '%s\n' "$SOURCE_NAMES" > "$COUNT_DIR/names"
+: > "$COUNT_DIR/stale"
+: > "$COUNT_DIR/foreign"
+
+for md in $MANAGED_DIRS; do
+    [ -d "$DESTINATION/$md" ] || continue
+    ( cd "$DESTINATION/$md" && find . -type f -print ) | sed 's|^\./||' |
+    while IFS= read -r rel; do
+        grep -Fxq "$md/$rel" "$COUNT_DIR/expected" && continue
+        # The standard's name is the directory for a skill, the basename otherwise.
+        case "$rel" in
+            */*/*)             lo_name="" ;;
+            */SKILL.md)        lo_name=${rel%/SKILL.md} ;;
+            */*)               lo_name="" ;;
+            *.instructions.md) lo_name=${rel%.instructions.md} ;;
+            *.*)               lo_name=${rel%.*} ;;
+            *)                 lo_name="" ;;
+        esac
+        if [ -n "$lo_name" ] && grep -Fxq "$lo_name" "$COUNT_DIR/names"; then
+            printf '%s\n' "$md/$rel" >> "$COUNT_DIR/stale"
+        else
+            printf '%s\n' "$md/$rel" >> "$COUNT_DIR/foreign"
+        fi
+    done
+done
+
+STALE_COUNT=$(wc -l < "$COUNT_DIR/stale" | tr -d ' ')
+
+if [ -s "$COUNT_DIR/foreign" ]; then
+    echo ""
+    echo "In a directory this installer manages, but not generated by it:"
+    sed 's|^|  '"$DESTINATION"'/|' "$COUNT_DIR/foreign"
+    echo "Left untouched."
+fi
+
+if [ "$STALE_COUNT" -eq 0 ]; then
+    if [ "$UPGRADE" -eq 1 ]; then
+        echo ""
+        echo "Nothing left over. The install is on the current layout."
+    fi
+elif [ "$UPGRADE" -eq 0 ]; then
+    echo ""
+    echo "Left over from an earlier layout, no longer referenced by anything:"
+    sed 's|^|  '"$DESTINATION"'/|' "$COUNT_DIR/stale"
+    printf 'Remove them with: ./install.sh %s --upgrade\n' \
+        "$([ "$USER_SCOPE" -eq 1 ] && echo '--user' || echo "$TARGET")"
+else
+    echo ""
+    echo "Left over from an earlier layout, to remove:"
+    sed 's|^|  - '"$DESTINATION"'/|' "$COUNT_DIR/stale"
+
+    REMOVE=1
+    if [ "$DRY_RUN" -eq 1 ]; then
+        REMOVE=0
+        printf '%s file(s) would be removed.\n' "$STALE_COUNT"
+    elif [ "$ASSUME_YES" -eq 0 ] && [ -r /dev/tty ] && [ -t 0 ]; then
+        printf 'Remove these %s file(s)? [y/N] ' "$STALE_COUNT"
+        confirm=""
+        read -r confirm < /dev/tty || confirm=""
+        case "$confirm" in
+            y|Y|yes|YES) ;;
+            *) REMOVE=0; echo "Left in place." ;;
+        esac
+    fi
+
+    if [ "$REMOVE" -eq 1 ]; then
+        while IFS= read -r o; do
+            [ -n "$o" ] || continue
+            rm -f "$DESTINATION/$o"
+        done < "$COUNT_DIR/stale"
+        # rmdir only ever removes an empty directory, so a directory still holding
+        # something of yours survives without needing a second check for it.
+        # Deepest first, then the parents the managed directories sat in.
+        for md in $MANAGED_DIRS; do
+            [ -d "$DESTINATION/$md" ] || continue
+            find "$DESTINATION/$md" -type d 2>/dev/null | LC_ALL=C sort -r |
+                while IFS= read -r dir; do rmdir "$dir" 2>/dev/null || true; done
+        done
+        for md in ".cursor" ".claude" ".codex" ".github" ".agents"; do
+            rmdir "$DESTINATION/$md" 2>/dev/null || true
+        done
+        printf '%s file(s) removed.\n' "$STALE_COUNT"
+    fi
 fi

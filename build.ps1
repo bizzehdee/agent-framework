@@ -7,31 +7,35 @@
     standards/*.md is the single source of truth. Generated output is not
     committed, so run this to produce files for a target directory.
 
-    By default only AGENTS.md and standards/ are emitted. That is all any
-    supported tool needs, because AGENTS.md is read natively by Codex, Cursor,
-    Copilot, Claude Code, Gemini CLI, Aider, Windsurf, Zed and others.
+    Output is AGENTS.md plus .agents/skills/<name>/SKILL.md, one skill per
+    standard. .agents/skills/ is the vendor-neutral Agent Skills location, read
+    natively by Codex, Cursor, Copilot/VS Code, OpenCode and others. A tool with
+    no skill loader reads AGENTS.md and opens the path from its trigger table, so
+    there is exactly one copy of every standard.
 
-    Tool-specific directories (.claude/, .cursor/, .github/) are emitted only
-    when named in -Adapters. They buy on-demand loading at the cost of extra
-    directories in the repository.
+    Adapters cover the two tools that need something else, and are off by
+    default. Claude Code reads only .claude/skills/; Copilot additionally
+    supports glob-attached instructions. Both emit pointers to the
+    .agents/skills/ copy, never a second copy of the text.
 
 .PARAMETER OutputRoot
     Directory to write into. Required.
 
 .PARAMETER Adapters
-    Optional tool-specific adapters: claude, copilot, cursor, all, none.
-    Defaults to none. Accepts an array or a comma-separated string.
+    Optional tool-specific adapters: claude, copilot, all, none. Defaults to
+    none. Accepts an array or a comma-separated string.
 
-.PARAMETER NoStandards
-    Skip emitting standards/. Only safe when every selected adapter inlines the
-    full text, because AGENTS.md refers to standards/ by path.
+.PARAMETER SkillsPath
+    Where AGENTS.md and the adapters say the skills live. Defaults to
+    .agents/skills. A user-level install passes ~/.agents/skills, because there
+    is no project root.
 
 .EXAMPLE
     ./build.ps1 -OutputRoot ../my-project
-    Emit AGENTS.md and standards/ only.
+    Emit AGENTS.md and .agents/skills/ only.
 
 .EXAMPLE
-    ./build.ps1 -OutputRoot ../my-project -Adapters claude,cursor
+    ./build.ps1 -OutputRoot ../my-project -Adapters claude
 #>
 [CmdletBinding()]
 param(
@@ -42,8 +46,10 @@ param(
 
     [string[]]$Stacks = @('all'),
 
-    [switch]$NoStandards
+    [string]$SkillsPath = '.agents/skills'
 )
+
+$SkillsPath = $SkillsPath.TrimEnd('/', '\')
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -56,11 +62,13 @@ if (-not (Test-Path $StandardsDir)) { throw "Source directory not found: $Standa
 if (-not (Test-Path $OutputRoot)) { New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null }
 $OutputRoot = (Resolve-Path $OutputRoot).Path
 
-# Only these three have a file-based, on-demand loading mechanism worth an
-# adapter. Every other tool reads AGENTS.md, which is always emitted.
-$KnownAdapters = @('claude', 'copilot', 'cursor')
+# Everything else reads .agents/skills/ natively, or falls back to the AGENTS.md
+# table. Only these two need a directory of their own: Claude Code does not read
+# .agents/skills/ at all, and Copilot has a glob-attach mechanism that skills do
+# not cover.
+$KnownAdapters = @('claude', 'copilot')
 
-# Accept both -Adapters claude,cursor (array) and -Adapters "claude,cursor" (one
+# Accept both -Adapters claude,copilot (array) and -Adapters "claude,copilot" (one
 # string, which is how "pwsh -File" passes a comma list). Splitting handles both.
 $requested = @($Adapters -split ',' | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ })
 
@@ -229,18 +237,27 @@ $generatedNotice = @"
      Standards version: $standardsVersion | stacks: $stacksStamp -->
 "@
 
-# --- standards/ -----------------------------------------------------------
-# AGENTS.md refers to these by path, so they are always emitted. Skipped when
-# generating in place, because the source already lives there.
+# --- .agents/skills/ ------------------------------------------------------
+# The canonical copy, and the only one. Agent Skills is an open format, so a
+# single tree serves every tool with a skill loader; AGENTS.md points the rest at
+# the same paths.
+#
+# Frontmatter carries only the two fields the spec requires. Stack and Globs are
+# build-time inputs to this script, not part of the format, so they are not
+# passed through. A standard excluded by stack is never emitted, or the target
+# gains rules for a language it does not use.
 
-if (-not $NoStandards -and $OutputRoot -ne $RepoRoot) {
-    # _core.md plus the stack-matching standards only. A standard excluded by
-    # stack must not reach the target, or the repository gains a file for a
-    # language it does not use.
-    Write-Generated 'standards/_core.md' ([System.IO.File]::ReadAllText((Join-Path $StandardsDir '_core.md')))
-    foreach ($s in $standards) {
-        Write-Generated "standards/$($s.Name).md" ([System.IO.File]::ReadAllText((Join-Path $StandardsDir "$($s.Name).md")))
-    }
+foreach ($s in $standards) {
+    Write-Generated ".agents/skills/$($s.Name)/SKILL.md" @"
+---
+name: $($s.Name)
+description: $($s.Description)
+---
+
+$generatedNotice
+
+$($s.Body)
+"@
 }
 
 # --- AGENTS.md ------------------------------------------------------------
@@ -249,7 +266,7 @@ if (-not $NoStandards -and $OutputRoot -ne $RepoRoot) {
 # emitted, and on its own it is a complete installation.
 
 $table = foreach ($s in $standards) {
-    "| ``$($s.Name)`` | $(Get-Trigger $s) | ``standards/$($s.Name).md`` |"
+    "| ``$($s.Name)`` | $(Get-Trigger $s) | ``$SkillsPath/$($s.Name)/SKILL.md`` |"
 }
 
 Write-Generated 'AGENTS.md' @"
@@ -291,10 +308,14 @@ repository convention that is insecure. Raise it rather than following it.
 "@
 
 # --- Optional adapters ----------------------------------------------------
-# Each adds a tool-specific directory. Off unless explicitly requested, because
-# AGENTS.md alone is sufficient and keeps the repository clean.
+# Each adds a tool-specific directory. Off unless explicitly requested. Neither
+# repeats a standard's text: they carry the discovery metadata their tool needs
+# and point at the .agents/skills/ copy.
 
-# Claude Code: the only target with model-decided progressive disclosure.
+# Claude Code reads .claude/skills/ only, so without this adapter it falls back
+# to the AGENTS.md table like any tool with no loader. The stub gives it a real
+# skill entry: name and description are what drive activation, and the body is
+# one instruction to read the canonical file.
 if ($selected -contains 'claude') {
     foreach ($s in $standards) {
         Write-Generated ".claude/skills/$($s.Name)/SKILL.md" @"
@@ -303,7 +324,10 @@ name: $($s.Name)
 description: $($s.Description)
 ---
 
-$($s.Body)
+$generatedNotice
+
+Read ``$SkillsPath/$($s.Name)/SKILL.md`` in full before starting this work, then
+follow it. That file is the standard; this one only points at it.
 "@
     }
 }
@@ -313,7 +337,7 @@ $($s.Body)
 # files; the rest are referenced by path from the repository-wide file.
 if ($selected -contains 'copilot') {
     $copilotTable = foreach ($s in $standards) {
-        "| ``standards/$($s.Name).md`` | $(Get-Trigger $s) |"
+        "| ``$SkillsPath/$($s.Name)/SKILL.md`` | $(Get-Trigger $s) |"
     }
 
     Write-Generated '.github/copilot-instructions.md' @"
@@ -341,31 +365,15 @@ applyTo: '$($s.Globs)'
 ---
 $generatedNotice
 
-$($s.Body)
-"@
-    }
-}
-
-# Cursor supports agent-requested rules: no globs plus alwaysApply false means
-# the model decides from the description.
-if ($selected -contains 'cursor') {
-    foreach ($s in $standards) {
-        $globsLine = if ($s.Globs) { "globs: $($s.Globs)" } else { 'globs:' }
-        Write-Generated ".cursor/rules/$($s.Name).mdc" @"
----
-description: $($s.Description)
-$globsLine
-alwaysApply: false
----
-
-$($s.Body)
+Read ``$SkillsPath/$($s.Name)/SKILL.md`` in full before editing these files, then
+follow it. That file is the standard; this one only points at it.
 "@
     }
 }
 
 Write-Host ''
 if ($selected.Count -eq 0) {
-    Write-Host 'Done. AGENTS.md + standards/ only, no tool-specific directories.' -ForegroundColor Green
+    Write-Host "Done. AGENTS.md + $SkillsPath/ only, no tool-specific directories." -ForegroundColor Green
 }
 else {
     Write-Host "Done. Adapters: $($selected -join ', ')" -ForegroundColor Green
