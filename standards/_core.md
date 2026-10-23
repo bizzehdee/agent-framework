@@ -26,7 +26,8 @@ These apply always. Do not wait to load a standard before honouring them.
    in `tasks/` before starting work, and tick a task there only when it is done.
    Record a reported bug in `tasks/bugs.md` before fixing it. Before producing
    any work on a task or bug, write its spec: `specs/spec-TASK-<n>.md` or
-   `specs/spec-BUG-<n>.md`.
+   `specs/spec-BUG-<n>.md`. When the work ends, write its summary in
+   `summaries/`, naming every deviation from the spec.
    Detail: `existing-project-conventions`, `learnings`, `project-planning`,
    `task-tracking`.
 3. **Tests must pass before a task is done.** Do not mark a checkbox or report
