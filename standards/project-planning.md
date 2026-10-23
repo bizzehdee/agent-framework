@@ -161,8 +161,8 @@ that it was considered.
 
 ## Revision history
 
-The last section of every plan document, and of `task.md` and each phase document
-([[task-tracking]]), is a table, at most one row per commit that changed the
+The last section of every plan document, and of `task.md`, each phase document,
+and each task and bug spec ([[task-tracking]]), is a table, at most one row per commit that changed the
 document, newest first:
 
 ```markdown
