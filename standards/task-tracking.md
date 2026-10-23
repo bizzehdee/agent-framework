@@ -1,7 +1,7 @@
 ---
 name: task-tracking
-description: Delivery phases and bugs - a root task.md listing the phases of development, one task document per phase in tasks/, and every reported bug in tasks/bugs.md - and where user feedback goes, feature requests into a phase and bugs into the bug list. USE FOR planning, adding, reordering, or dropping a delivery phase. USE FOR starting, finishing, or adding a task. USE FOR recording a bug the user reports or a feature request the user feeds back. USE FOR deciding whether a phase is done. DO NOT USE FOR describing what the project is for or which features it has - see project-planning. DO NOT USE FOR diagnosing a bug - see elimination-debugging. DO NOT USE FOR a session-only to-do list that nothing reads afterwards.
-globs: task.md,tasks/*.md
+description: Delivery phases, task and bug specs and summaries, and bugs - a root task.md listing the phases of development, one task document per phase in tasks/, a spec in specs/ written before any work on a task or bug and a summary in summaries/ when it ends, and every reported bug in tasks/bugs.md - and where user feedback goes, feature requests into a phase and bugs into the bug list. USE FOR planning, adding, reordering, or dropping a delivery phase. USE FOR starting, finishing, or adding a task, or writing a task or bug spec or summary. USE FOR recording a bug the user reports or a feature request the user feeds back. USE FOR deciding whether a phase is done. DO NOT USE FOR describing what the project is for or which features it has - see project-planning. DO NOT USE FOR diagnosing a bug - see elimination-debugging. DO NOT USE FOR a session-only to-do list that nothing reads afterwards.
+globs: task.md,tasks/*.md,specs/*.md,summaries/*.md
 stack: any
 ---
 
@@ -48,11 +48,17 @@ A phase document holds, in this order:
 |---|---|
 | `# Phase <n>: <name>` | The heading. |
 | Goal | One paragraph. Link the features it delivers in `docs/features.md`; do not restate them. |
-| Tasks | One checkbox per task, each small enough to finish and commit alone ([[git-and-commits]]). |
+| Tasks | One checkbox per task, numbered, each small enough to finish and commit alone ([[git-and-commits]]). |
 | Done when | Measurable conditions that end the phase. |
 | Open questions | Every undecided item in the phase, and who must decide it. |
 | Revision history | The table defined in [[project-planning]]. |
 
+- Number tasks `T1` upwards across every phase, so a number names one task in the
+  whole project. Never renumber or reuse a number. A task with no number gets the
+  next unused one before its spec is written.
+- Write a task as `- [ ] T<n>: <what it delivers>`, and link its spec and summary
+  once each exists:
+  `- [x] T5: Schedule exports from the admin screen. [Spec](../specs/spec-TASK-5.md) [Summary](../summaries/summary-TASK-5.md)`.
 - Add a task to its phase document before starting it. Show the user the tasks
   you drafted for a phase before working through them.
 - Tick a task only when it is done and its tests pass ([[testing-standards]]).
@@ -61,6 +67,88 @@ A phase document holds, in this order:
 - Ticking a task and changing a phase's status are progress, not revisions; they
   need no revision row. Adding, changing, or removing a phase, a task, or a Done
   when condition does.
+
+## Specs
+
+Before producing any work on a task or a bug, write its spec in `specs/`:
+
+| Work | Spec |
+|---|---|
+| Task `T<n>` | `specs/spec-TASK-<n>.md` |
+| Bug `B<n>` | `specs/spec-BUG-<n>.md` |
+
+Reading code and investigating come first; for a bug, so does its diagnosis,
+including a temporary change made to test a named candidate
+([[elimination-debugging]]). No other code, test, configuration, or file change
+for the work comes before its spec.
+
+Specs and summaries are documentation. They record the work; neither is an
+approval step, and neither is a condition for ticking a task or fixing a bug.
+
+- You always write them for your own work. They are your duty, not a gate on
+  anyone else's.
+- A missing spec or summary never blocks work. When a human worked on a task or
+  bug without one, carry on: write the spec before your own work on it, and the
+  summary when it ends. Never require a human to write one.
+- When the user tells you not to write a spec or a summary, do not write it, and
+  carry on without it.
+
+A spec holds, in this order:
+
+| Section | Holds |
+|---|---|
+| Heading | `# T<n>: <what it delivers>` or `# B<n>: <bug title>`, matching its entry. |
+| Source | A task: a link to its phase document, and the features it serves in `docs/features.md`. A bug: a link to its entry in `tasks/bugs.md`, its confirmed root cause, and the evidence that confirmed it. |
+| Scope | Two lists: in scope, and explicitly out of scope. |
+| Units of work | Numbered. Each names what changes, the files or modules it touches, the tests that prove it, and its own Done when. Each is small enough to commit alone ([[git-and-commits]]). For a bug, the first unit is the regression test that fails for the reported reason ([[testing-standards]]). |
+| Done when | Measurable conditions that end the work. |
+
+- A spec is fully scoped and refined: a reader could carry out every unit without
+  asking. No unit says "etc.", "as needed", "and so on", or "TBD".
+- A spec holds no open question. Ask the user about anything undecided before
+  writing the spec, and record the answer in the plan document that owns it
+  ([[project-planning]]).
+- A spec covers its task or bug and nothing more. Work beyond it becomes a new
+  task, proposed to the user, or a new bug.
+- Never edit a spec once its first unit of work has begun. Where the work differs
+  from it, record the deviation in the summary.
+- Commit the spec no later than the first unit of work.
+- Keep every spec, including a dropped task's or a `won't fix` bug's. Never delete
+  one.
+
+## Summaries
+
+When work on a task or a bug ends, write its summary in `summaries/`:
+
+| Work | Summary |
+|---|---|
+| Task `T<n>` | `summaries/summary-TASK-<n>.md` |
+| Bug `B<n>` | `summaries/summary-BUG-<n>.md` |
+
+Work ends when the task is ticked or the bug set to `fixed`, or when the task is
+dropped or the bug set to `won't fix` after work began. Work that never began gets
+no summary.
+
+A summary holds, in this order:
+
+| Section | Holds |
+|---|---|
+| Heading | The spec's heading. |
+| Spec | A link to the spec. |
+| Work carried out | One entry per unit of work in the spec, by its number: what was done, the files changed, and the tests added. |
+| Deviations from the spec | Every deviation, or `None.`, or `No spec.` when the work had none. |
+| Verification | The tests and checks run, and their observed results ([[testing-standards]]). |
+| Follow-up | Every task or bug raised by the work, by its `T<n>` or `B<n>`, or `None.` |
+
+- A deviation is any difference between the spec and the work done: a unit,
+  scope item, or Done when condition added, dropped, or done differently. Name
+  each one explicitly: what the spec said, what was done instead, and why.
+- Never leave a deviation out, and never describe one as if the spec had said it.
+  `None.` is a claim that the work matched the spec exactly.
+- Report results as observed. An unverified result is labelled unverified.
+- Commit the summary with the last unit of work.
+- Write a summary once. Never rewrite it afterwards: a later change to the work is
+  a new task or bug, with its own spec and summary.
 
 ## Feature requests and bugs
 
@@ -76,8 +164,8 @@ description fits both, ask which it is.
 - Every bug goes in `tasks/bugs.md`, never in a phase document. A defect in a task
   not yet ticked is part of that task, not a bug.
 - Record a bug before starting to fix it. Diagnose it by elimination
-  ([[elimination-debugging]]), and fix it with a regression test
-  ([[testing-standards]]).
+  ([[elimination-debugging]]), write its spec (see Specs), then fix it with a
+  regression test ([[testing-standards]]).
 
 ## The bug list
 
@@ -92,9 +180,13 @@ description fits both, ask which it is.
 - Observed: The export returns a 500 error.
 - Expected: An export containing only the header row.
 - Reproduce: Schedule an export of a report filtered to no rows.
+- Spec: [spec-BUG-2](../specs/spec-BUG-2.md)
+- Summary: [summary-BUG-2](../summaries/summary-BUG-2.md)
 ```
 
-- Number bugs `B1` upwards. Never renumber or reuse a number.
+- Number every bug `B1` upwards. Never renumber or reuse a number.
+- Add the `Spec:` line once the bug's spec exists, and the `Summary:` line once
+  its summary does.
 - `Reported` is an absolute ISO date, `YYYY-MM-DD`.
 - Status is `open`, `in progress`, `fixed`, or `won't fix`. Set `fixed` only when
   the regression test fails without the fix and passes with it. `won't fix` is the
@@ -109,9 +201,12 @@ description fits both, ask which it is.
 
 - [ ] Every phase and task derives from a plan that passed its review.
 - [ ] `task.md` lists every phase with a status that matches reality, each linked to its `tasks/task_phase_<n>.md`.
-- [ ] Every task worked on is in its phase document.
+- [ ] Every task worked on is in its phase document, numbered `T<n>`.
+- [ ] Every started task had its `specs/spec-TASK-<n>.md`, and every bug fix its `specs/spec-BUG-<n>.md`, before any other work on it.
+- [ ] Every spec is fully scoped, holds no open question, and was not edited after work began.
+- [ ] Every ended task or bug has its summary, naming every deviation from the spec or stating `None.`
 - [ ] Every ticked task is done and its tests pass.
 - [ ] Every feature request is a task in the current phase or the phase the user named.
-- [ ] Every bug the user reported is in `tasks/bugs.md`, and no bug is in a phase document.
+- [ ] Every bug the user reported is in `tasks/bugs.md`, numbered `B<n>`, and no bug is in a phase document.
 - [ ] Every `fixed` bug has a regression test that fails without the fix.
 - [ ] `task.md` and each phase document this commit alters has one revision row for it ([[project-planning]]).

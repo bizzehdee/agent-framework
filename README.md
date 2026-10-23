@@ -194,7 +194,7 @@ Universal (`stack: any`):
 | `dependency-management` | Licence, supply-chain and lockfile discipline. |
 | `research-provenance` | Check order before web search, archiving, indexing, and extracts. |
 | `project-planning` | The project plan: a `plan.md` overview indexing one source-of-truth document per section in `docs/`. Describe a new project through conversation, keep it current as features land, revision tables. |
-| `task-tracking` | Delivery phases in `task.md`, one task document per phase in `tasks/`, bugs in `tasks/bugs.md`. Feature requests join a phase; bugs join the bug list. |
+| `task-tracking` | Delivery phases in `task.md`, one task document per phase in `tasks/`, bugs in `tasks/bugs.md`, a spec in `specs/` before any work on a task or bug, and a summary in `summaries/`, naming every deviation, when it ends. Feature requests join a phase; bugs join the bug list. |
 | `learnings` | Durable project knowledge in `.learnings/`: record what a task teaches, consult it first. |
 | `observability-standards` | Structured logging, what to log, health checks. |
 | `performance-discipline` | Measure before optimising; defects to avoid by default. |

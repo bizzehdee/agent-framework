@@ -24,7 +24,11 @@ These apply always. Do not wait to load a standard before honouring them.
    and its one revision row for the commit — in the same change that adds,
    changes, or removes a feature. Read `task.md` and the current phase's document
    in `tasks/` before starting work, and tick a task there only when it is done.
-   Record a reported bug in `tasks/bugs.md` before fixing it.
+   Record a reported bug in `tasks/bugs.md` before fixing it. Before producing
+   any work on a task or bug, write its spec: `specs/spec-TASK-<n>.md` or
+   `specs/spec-BUG-<n>.md`. When the work ends, write its summary in
+   `summaries/`, naming every deviation from the spec. Neither blocks work when
+   missing, or when the user says to skip it.
    Detail: `existing-project-conventions`, `learnings`, `project-planning`,
    `task-tracking`.
 3. **Tests must pass before a task is done.** Do not mark a checkbox or report
