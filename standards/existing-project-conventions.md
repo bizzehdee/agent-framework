@@ -1,6 +1,6 @@
 ---
 name: existing-project-conventions
-description: Precedence rules for working inside an existing repository - follow established architecture, patterns, naming, and tooling over global preferences, and obtain approval before introducing any new framework, pattern, or architectural style. USE FOR any change to a repository you did not create, before choosing a library, before adding a project or folder, before applying a personal or default convention, and when a default guideline conflicts with what the repository already does. DO NOT USE FOR greenfield work with no existing code.
+description: Precedence rules for working inside an existing repository - follow established architecture, patterns, naming, and tooling over global preferences, and obtain approval before introducing any new framework, pattern, or architectural style. USE FOR any change to a repository you did not create, before choosing a library, before adding a project or folder, before applying a personal or default convention, and when a default guideline conflicts with what the repository already does. USE FOR any conflict between a standard and the conventions of the language being written. DO NOT USE FOR greenfield work with no existing code, other than a conflict with the language's conventions.
 globs:
 stack: any
 ---
@@ -17,7 +17,9 @@ Authority, highest first:
 2. The repository's documented conventions: `CONTRIBUTING.md`, a style guide,
    `.editorconfig`, linter configuration.
 3. The patterns used in the surrounding code.
-4. These standards, including [[architecture-principles]].
+4. The conventions of the language being written: its official style guide, its
+   reference documentation, and its standard library's own practice.
+5. These standards, including [[architecture-principles]].
 
 ## Rules
 
@@ -53,5 +55,12 @@ If a fact cannot be established from the code, ask. Do not assume.
 Name the framework default, name what the repository does, follow the repository,
 and note the conflict once so the user can decide.
 
-The exception is security. If a repository convention is insecure, raise it rather
-than following it ([[secure-engineering]] is non-negotiable).
+## When a standard conflicts with the language
+
+Follow the language. In your report of the work, name the standard's rule, name the
+language convention and cite its source, and say why the two conflict. A convention
+with no citable source, or a preference, is not a justification; follow the
+standard.
+
+The exception is security. If a repository or language convention is insecure,
+raise it rather than following it ([[secure-engineering]] is non-negotiable).

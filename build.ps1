@@ -301,10 +301,18 @@ Highest authority first:
 1. An explicit instruction from the user in the current conversation.
 2. This repository's own documented conventions and tooling configuration.
 3. The patterns used in the surrounding code.
-4. The standards listed above.
+4. The conventions of the language being written: its official style guide, its
+   reference documentation, and its standard library's own practice.
+5. The standards listed above.
+
+When a language convention overrides a standard, state why in your report of the
+work: name the standard's rule, name the convention and its source, and say why
+the two conflict. A convention with no citable source, or a preference, is not a
+justification; follow the standard.
 
 The single exception is security. Rule 1 of the non-negotiables outranks a
-repository convention that is insecure. Raise it rather than following it.
+repository or language convention that is insecure. Raise it rather than
+following it.
 "@
 
 # --- Optional adapters ----------------------------------------------------

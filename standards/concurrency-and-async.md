@@ -66,7 +66,8 @@ the entry point.
 
 - In library code, use `ConfigureAwait(false)`, unless the project's convention or
   analyser configuration says otherwise. Application and ASP.NET Core code does not
-  need it.
+  need it. In a Godot project, never use it in code that touches a Godot object;
+  [[godot-scene-architecture]] governs threading there.
 - Never use `Thread.Sleep` in async code. Never use a real `Task.Delay` duration in
   a test — inject `TimeProvider` and control it ([[testing-standards]]).
 

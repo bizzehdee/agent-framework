@@ -81,7 +81,8 @@ rules.
 Detection looks for marker files up to three levels deep: `*.csproj`/`*.sln`/
 `global.json` → `dotnet`; `pyproject.toml`/`setup.py`/`requirements.txt` → `python`;
 `Cargo.toml` → `rust`; `CMakeLists.txt`/`*.vcxproj` → `c-cpp`; `package.json` →
-`node`; `go.mod` → `go`. Override with `--stacks`, or `--stacks any` for universal
+`node`; `go.mod` → `go`; `project.godot` → `godot`. A Godot C# project also has a
+`.csproj`, so it receives both `godot` and `dotnet`. Override with `--stacks`, or `--stacks any` for universal
 standards only.
 
 ## Optional adapters
@@ -186,13 +187,14 @@ Universal (`stack: any`):
 | `elimination-debugging` | Candidate enumeration, the elimination report format, evidence before decisions. |
 | `error-handling` | Return expected failures; exceptions are for exceptional cases only. |
 | `testing-standards` | Coverage target, definition of done, mocking limits, determinism. |
-| `code-quality` | SOLID and DRY, abstraction timing, comments, dead code. |
+| `code-quality` | One purpose per file and class, no catch-all utilities, SOLID and DRY, abstraction timing, comments, dead code. |
 | `architecture-principles` | Vertical slices, composition, no speculative patterns. |
 | `git-and-commits` | Per-task commits in a series, otherwise on request; message format. |
 | `no-hardcodes` | Pre-commit gate: blocks secrets and environment-specific values. |
 | `dependency-management` | Licence, supply-chain and lockfile discipline. |
 | `research-provenance` | Check order before web search, archiving, indexing, and extracts. |
-| `project-planning` | The project plan in `plan.md`: describe a new project through conversation, keep it current as features land, revision table. |
+| `project-planning` | The project plan: a `plan.md` overview indexing one source-of-truth document per section in `docs/`. Describe a new project through conversation, keep it current as features land, revision tables. |
+| `task-tracking` | Delivery phases in `task.md`, one task document per phase in `tasks/`, bugs in `tasks/bugs.md`. Feature requests join a phase; bugs join the bug list. |
 | `learnings` | Durable project knowledge in `.learnings/`: record what a task teaches, consult it first. |
 | `observability-standards` | Structured logging, what to log, health checks. |
 | `performance-discipline` | Measure before optimising; defects to avoid by default. |
@@ -217,6 +219,14 @@ Universal (`stack: any`):
 | Standard | Covers |
 |---|---|
 | `memory-and-resource-safety` | RAII and ownership, bounded buffers, undefined behaviour, warnings as errors, sanitisers. |
+
+`stack: godot` (Godot 4, GDScript and C#):
+
+| Standard | Covers |
+|---|---|
+| `godot-project-files` | Engine version check, hand-editing `.tscn`/`.tres`, `.uid` and `.import` sidecars, export secrets, headless validation. |
+| `godot-scripting` | Static typing, naming and member order, Godot 4 signals, exports, C# partial classes and generated names. |
+| `godot-scene-architecture` | Call down and signal up, autoload discipline, shared resources, the frame loop, main-thread rule, freeing, multiplayer authority. |
 
 `_core.md` holds the eight non-negotiables. It is injected inline into `AGENTS.md`
 and never becomes a skill of its own — a rule that applies only once loaded is not a

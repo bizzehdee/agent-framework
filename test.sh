@@ -204,6 +204,9 @@ SRC_STACKED=$(grep -L '^stack: any' "$REPO_ROOT"/standards/*.md | wc -l | tr -d 
 DOTNET_PATTERN=$(grep -l '^stack: dotnet' "$REPO_ROOT"/standards/*.md |
     sed 's|.*/||; s|\.md$||' | tr '\n' '|' | sed 's/|$//')
 SRC_PYTHON=$(grep -l '^stack: python' "$REPO_ROOT"/standards/*.md | wc -l | tr -d ' ')
+SRC_GODOT=$(grep -l '^stack: godot' "$REPO_ROOT"/standards/*.md | wc -l | tr -d ' ')
+GODOT_PATTERN=$(grep -l '^stack: godot' "$REPO_ROOT"/standards/*.md |
+    sed 's|.*/||; s|\.md$||' | tr '\n' '|' | sed 's/|$//')
 PYTHON_PATTERN=$(grep -l '^stack: python' "$REPO_ROOT"/standards/*.md |
     sed 's|.*/||; s|\.md$||' | tr '\n' '|' | sed 's/|$//')
 
@@ -343,6 +346,23 @@ assert_eq 'a Python project receives no dotnet standards' \
     "$(ls "$WORK/proj-python/.agents/skills" | grep -c -E "$DOTNET_PATTERN")" '0'
 assert_eq 'a Python project receives the python standards' \
     "$(ls "$WORK/proj-python/.agents/skills" | grep -c -E "$PYTHON_PATTERN")" "$SRC_PYTHON"
+
+# A GDScript-only Godot project is godot alone; a C# one is godot and dotnet.
+mkdir -p "$WORK/proj-godot/game" "$WORK/proj-godot-cs/game"
+: > "$WORK/proj-godot/game/project.godot"
+: > "$WORK/proj-godot-cs/game/project.godot"
+: > "$WORK/proj-godot-cs/game/Game.csproj"
+
+sh_install "$WORK/proj-godot" -y
+assert_eq 'a Godot project receives the godot standards' \
+    "$(ls "$WORK/proj-godot/.agents/skills" | grep -c -E "$GODOT_PATTERN")" "$SRC_GODOT"
+assert_eq 'a GDScript Godot project receives no dotnet standards' \
+    "$(ls "$WORK/proj-godot/.agents/skills" | grep -c -E "$DOTNET_PATTERN")" '0'
+
+sh_install "$WORK/proj-godot-cs" -y
+assert_eq 'a C# Godot project receives the godot and dotnet standards' \
+    "$(ls "$WORK/proj-godot-cs/.agents/skills" | grep -c -E "$GODOT_PATTERN|$DOTNET_PATTERN")" \
+    "$((SRC_GODOT + SRC_DOTNET))"
 assert_eq 'a .NET project receives no python standards' \
     "$(ls "$WORK/proj-dotnet/.agents/skills" | grep -c -E "$PYTHON_PATTERN")" '0'
 
@@ -445,6 +465,14 @@ if [ "$HAVE_PWSH" -eq 1 ]; then
     sh_install "$WORK/j-sh" -y
     ps_install -Target "$WORK/j-ps" -Yes
     assert_same_tree 'stack detection agrees (.NET project)' "$WORK/j-sh" "$WORK/j-ps"
+
+    rm -rf "$WORK/k-sh" "$WORK/k-ps"
+    mkdir -p "$WORK/k-sh/game" "$WORK/k-ps/game"
+    : > "$WORK/k-sh/game/project.godot"
+    : > "$WORK/k-ps/game/project.godot"
+    sh_install "$WORK/k-sh" -y
+    ps_install -Target "$WORK/k-ps" -Yes
+    assert_same_tree 'stack detection agrees (Godot project)' "$WORK/k-sh" "$WORK/k-ps"
 
     assert_exit 'ps --check agrees on a clean install' 0 \
         pwsh -NoProfile -File "$REPO_ROOT/install.ps1" -Target "$WORK/i-ps" -Check
