@@ -174,8 +174,8 @@ A phase document holds, in this order:
 
 ## Revision history
 
-The last section of every plan document is a table, one row per update to that
-document, newest first:
+The last section of every plan document is a table, at most one row per commit
+that changed the document, newest first:
 
 ```markdown
 ## Revision history
@@ -191,10 +191,17 @@ document, newest first:
 - `Change` is one of `Created`, `Added`, `Changed`, `Removed`, `Dropped`.
 - `Summary` is one sentence naming what the document now says differently. Do not
   describe the code change; describe the plan change.
-- A row goes in each document the update changed, and only those. Adding or
-  removing a section document changes the index, so it also adds a row to
-  `plan.md`. Adding or dropping a phase adds a row to `task.md`.
-- Never edit or delete an existing row, and never rewrite history to look tidier.
+- A row goes in each document the commit changes, and only those. Adding or
+  removing a section document changes the index, so it also changes `plan.md`.
+  Adding or dropping a phase changes `task.md`.
+- One row per document per commit. Before adding a row, check whether the
+  newest row is already committed. It is uncommitted when the repository has no
+  commits, the document is untracked, or `git diff HEAD -- <document>` shows the
+  row as added. If it is uncommitted, update it instead of adding another: set
+  `Date` to the current date, keep `Created` if it says `Created`, otherwise set
+  `Changed` when the commit mixes kinds of change, and rewrite `Summary` to cover
+  everything the commit changes in the document.
+- Never edit or delete a committed row, and never rewrite history to look tidier.
 
 ## Checklist
 
@@ -207,5 +214,5 @@ document, newest first:
 - [ ] Feature statuses match reality.
 - [ ] `task.md` lists every phase with a status that matches reality, each linked to its `tasks/task_phase_<n>.md`.
 - [ ] Every ticked task is done and its tests pass.
-- [ ] A dated revision row added to each document this change altered.
+- [ ] Each document this commit alters has exactly one uncommitted revision row, dated and covering the whole commit.
 - [ ] No secret or personal data in the plan.
