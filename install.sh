@@ -213,6 +213,7 @@ detect_stacks() {
     ds_has 'meson.build'    && ds_add c-cpp
     ds_has 'package.json'   && ds_add node
     ds_has 'go.mod'         && ds_add go
+    ds_has 'project.godot'  && ds_add godot
 
     echo "$ds_found" | sed 's/^ //'
 }

@@ -238,6 +238,7 @@ function Get-ProjectStacks {
         'c-cpp' = 'CMakeLists.txt', '*.vcxproj', 'meson.build'
         node   = 'package.json'
         go     = 'go.mod'
+        godot  = 'project.godot'
     }
 
     $found = [System.Collections.Generic.List[string]]::new()
