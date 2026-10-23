@@ -33,6 +33,9 @@ Bugs: [tasks/bugs.md](tasks/bugs.md)
 - Number phases from 1. Never renumber a phase or reuse its number: links to it
   would break. A phase added later takes the next unused number, and its row goes
   where it falls in delivery order.
+- Derive phases and tasks only from a plan that has passed its review for
+  ambiguity, contradiction, and missing context ([[project-planning]]). Never
+  write `task.md`, or add a task from a plan change, before that review passes.
 - Phases and their goals are the user's decision. Propose them; do not add,
   reorder, or drop one on your own initiative.
 - Keep a dropped phase, its row, and its document.
@@ -104,6 +107,7 @@ description fits both, ask which it is.
 
 ## Checklist
 
+- [ ] Every phase and task derives from a plan that passed its review.
 - [ ] `task.md` lists every phase with a status that matches reality, each linked to its `tasks/task_phase_<n>.md`.
 - [ ] Every task worked on is in its phase document.
 - [ ] Every ticked task is done and its tests pass.

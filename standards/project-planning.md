@@ -1,6 +1,6 @@
 ---
 name: project-planning
-description: The project plan - a root plan.md overview indexing one source-of-truth document per section in docs/ - written through conversation with the user before building, kept current as features change, and the one-row-per-commit revision table that ends every plan and task document. USE FOR starting a new project, scaffolding a greenfield repository, or any request to plan, describe, or scope a project. USE FOR adding, changing, or removing a feature, endpoint, screen, job, or integration. USE FOR reconstructing a plan for a project already under way. USE FOR answering what a project is for or whether something is in scope. DO NOT USE FOR recording a non-obvious fact discovered while working - see learnings. DO NOT USE FOR delivery phases, tasks, or bugs - see task-tracking. DO NOT USE FOR choosing an architecture or judging an abstraction - see architecture-principles and code-quality.
+description: The project plan - a root plan.md overview indexing one source-of-truth document per section in docs/ - written through conversation with the user before building, kept current as features change, and the one-row-per-commit revision table that ends every plan and task document. USE FOR starting a new project, scaffolding a greenfield repository, or any request to plan, describe, or scope a project. USE FOR adding, changing, or removing a feature, endpoint, screen, job, or integration. USE FOR reviewing a plan for ambiguity, contradiction, or missing context. USE FOR reconstructing a plan for a project already under way. USE FOR answering what a project is for or whether something is in scope. DO NOT USE FOR recording a non-obvious fact discovered while working - see learnings. DO NOT USE FOR delivery phases, tasks, or bugs - see task-tracking. DO NOT USE FOR choosing an architecture or judging an abstraction - see architecture-principles and code-quality.
 globs: plan.md,**/plan.md,docs/*.md
 stack: any
 ---
@@ -43,15 +43,42 @@ Produce the plan by interviewing the user, before writing any project code.
    treated as settled.
 4. Write `plan.md` and each section document, then show the user the open
    questions that remain.
-5. Propose delivery phases and agree them with the user, then write `task.md`
+5. Review the plan (see Reviewing the plan) and resolve every finding.
+6. Propose delivery phases and agree them with the user, then write `task.md`
    and a task document for each phase ([[task-tracking]]).
-6. Do not begin implementation until Purpose, Scope, Features and Stack are
+7. Do not begin implementation until Purpose, Scope, Features and Stack are
    settled and the first phase's tasks are written, or the user says to start
    with the rest open.
 
 The plan is as complete as the user can make it, not as complete as you can guess
 it. An unanswered question recorded as open is correct; a guess written as a
 requirement is a defect.
+
+## Reviewing the plan
+
+The plan must be self-complete and self-consistent before any task is derived from
+it. Self-complete: a reader holding only the plan documents, without this
+conversation, can build what it describes without asking. Self-consistent: no two
+statements in it conflict.
+
+Review the whole plan before writing `task.md`. After that, review each plan change
+against every document it touches before deriving a task from it. Read the
+documents together, not one at a time, and check for:
+
+| Finding | Examples |
+|---|---|
+| Ambiguity | A statement with two readings. An unmeasurable term: "fast", "secure", "scalable", "as needed", "etc.". One thing called by two names, or two things by one. |
+| Contradiction | A feature that Scope places out of scope. A constraint the Stack cannot meet. Two documents stating different values for one fact. |
+| Missing context | A user need with no feature, or a feature serving no user. A feature using data absent from `docs/data.md`, or an external system absent from `docs/integrations.md`. A term, document, or link that is undefined or does not resolve. A fact that exists only in this conversation. |
+
+- Show the user every finding: its document, the statement, its kind, and
+  candidate resolutions as options. At most five per turn.
+- Fix each finding in the document that owns the fact, as the user resolves it.
+  Never resolve one by guessing: the plan states only what the user decided.
+- A finding the user chooses to leave undecided goes in its document's Open
+  questions. No task may depend on it until it is decided.
+- Review again after the fixes. The plan passes when a full review finds nothing
+  new.
 
 ## `plan.md`: the overview
 
@@ -166,6 +193,7 @@ document, newest first:
 - [ ] Every section document indexed in `plan.md`, or its index row says `Not applicable` and why.
 - [ ] No fact stated in more than one plan document.
 - [ ] No requirement in the plan that the user did not state.
+- [ ] The plan passed a review for ambiguity, contradiction, and missing context before any task was derived from it.
 - [ ] Every undecided item listed under its document's Open questions with an owner.
 - [ ] Feature statuses match reality.
 - [ ] Each document this commit alters has exactly one uncommitted revision row, dated and covering the whole commit.
