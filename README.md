@@ -186,7 +186,7 @@ Universal (`stack: any`):
 | `elimination-debugging` | Candidate enumeration, the elimination report format, evidence before decisions. |
 | `error-handling` | Return expected failures; exceptions are for exceptional cases only. |
 | `testing-standards` | Coverage target, definition of done, mocking limits, determinism. |
-| `code-quality` | SOLID and DRY, abstraction timing, comments, dead code. |
+| `code-quality` | One purpose per file and class, no catch-all utilities, SOLID and DRY, abstraction timing, comments, dead code. |
 | `architecture-principles` | Vertical slices, composition, no speculative patterns. |
 | `git-and-commits` | Per-task commits in a series, otherwise on request; message format. |
 | `no-hardcodes` | Pre-commit gate: blocks secrets and environment-specific values. |
