@@ -192,7 +192,7 @@ Universal (`stack: any`):
 | `no-hardcodes` | Pre-commit gate: blocks secrets and environment-specific values. |
 | `dependency-management` | Licence, supply-chain and lockfile discipline. |
 | `research-provenance` | Check order before web search, archiving, indexing, and extracts. |
-| `project-planning` | The project plan: a `plan.md` overview indexing one source-of-truth document per section in `docs/`. Describe a new project through conversation, keep it current as features land, revision tables. |
+| `project-planning` | The project plan: a `plan.md` overview indexing one source-of-truth document per section in `docs/`. Delivery phases in `task.md`, one task document per phase in `tasks/`. Describe a new project through conversation, keep it current as work lands, revision tables. |
 | `learnings` | Durable project knowledge in `.learnings/`: record what a task teaches, consult it first. |
 | `observability-standards` | Structured logging, what to log, health checks. |
 | `performance-discipline` | Measure before optimising; defects to avoid by default. |

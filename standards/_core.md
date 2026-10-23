@@ -22,7 +22,8 @@ These apply always. Do not wait to load a standard before honouring them.
    Read `plan.md`, and the `docs/` documents it indexes, for what the project is
    for and what is in scope. Update the document that owns the changed section —
    with a dated revision row — in the same change that adds, changes, or removes
-   a feature.
+   a feature. Read `task.md` and the current phase's document in `tasks/`
+   before starting work, and tick a task there only when it is done.
    Detail: `existing-project-conventions`, `learnings`, `project-planning`.
 3. **Tests must pass before a task is done.** Do not mark a checkbox or report
    completion until you have run the tests and observed them pass. If they fail,
