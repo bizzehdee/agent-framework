@@ -85,6 +85,14 @@ for the work comes before its spec.
 Specs and summaries are documentation. They record the work; neither is an
 approval step, and neither is a condition for ticking a task or fixing a bug.
 
+- You always write them for your own work. They are your duty, not a gate on
+  anyone else's.
+- A missing spec or summary never blocks work. When a human worked on a task or
+  bug without one, carry on: write the spec before your own work on it, and the
+  summary when it ends. Never require a human to write one.
+- When the user tells you not to write a spec or a summary, do not write it, and
+  carry on without it.
+
 A spec holds, in this order:
 
 | Section | Holds |
@@ -128,7 +136,7 @@ A summary holds, in this order:
 | Heading | The spec's heading. |
 | Spec | A link to the spec. |
 | Work carried out | One entry per unit of work in the spec, by its number: what was done, the files changed, and the tests added. |
-| Deviations from the spec | Every deviation, or `None.` |
+| Deviations from the spec | Every deviation, or `None.`, or `No spec.` when the work had none. |
 | Verification | The tests and checks run, and their observed results ([[testing-standards]]). |
 | Follow-up | Every task or bug raised by the work, by its `T<n>` or `B<n>`, or `None.` |
 
