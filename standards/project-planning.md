@@ -1,6 +1,6 @@
 ---
 name: project-planning
-description: The project plan and its delivery phases - a root plan.md overview indexing one source-of-truth document per section in docs/, and a root task.md listing phases, each with a task document in tasks/ - agreed with the user before building, kept current as work lands, with a revision table in every document. USE FOR starting a new project, scaffolding a greenfield repository, or any request to plan, describe, or scope a project. USE FOR adding, changing, or removing a feature, endpoint, screen, job, or integration. USE FOR planning phases, or starting or finishing a task in one. USE FOR reconstructing a plan for a project already under way. USE FOR answering what a project is for or whether something is in scope. DO NOT USE FOR recording a non-obvious fact discovered while working - see learnings. DO NOT USE FOR a session-only task breakdown that nothing reads afterwards. DO NOT USE FOR choosing an architecture or judging an abstraction - see architecture-principles and code-quality.
+description: The project plan, delivery phases, and bug list - a root plan.md overview indexing one source-of-truth document per section in docs/, a root task.md listing phases each with a document in tasks/, and tasks/bugs.md - agreed with the user, kept current as work lands, with one revision row per commit. USE FOR starting a new project, scaffolding a greenfield repository, or any request to plan, describe, or scope a project. USE FOR adding, changing, or removing a feature, endpoint, screen, job, or integration. USE FOR planning phases, starting or finishing a task, or recording a reported bug. USE FOR reconstructing a plan for a project already under way. USE FOR answering what a project is for or whether something is in scope. DO NOT USE FOR recording a non-obvious fact discovered while working - see learnings. DO NOT USE FOR diagnosing a bug - see elimination-debugging. DO NOT USE FOR choosing an architecture or judging an abstraction - see architecture-principles and code-quality.
 globs: plan.md,**/plan.md,docs/*.md,task.md,tasks/*.md
 stack: any
 ---
@@ -141,9 +141,12 @@ Each phase's tasks live in its own document, `tasks/task_phase_<n>.md`.
 |---|---|---|---|
 | 1 | Sign-up, sign-in, and account settings. | done | [Phase 1](tasks/task_phase_1.md) |
 | 2 | Scheduled report export. | in progress | [Phase 2](tasks/task_phase_2.md) |
+
+Bugs: [tasks/bugs.md](tasks/bugs.md)
 ```
 
-- `task.md` holds the phase table, then **Revision history**. Goal is one
+- `task.md` holds the phase table, a link to `tasks/bugs.md`, then **Revision
+  history**. Goal is one
   sentence. Status is `planned`, `in progress`, `done`, or `dropped`.
 - Number phases from 1. Never renumber a phase or reuse its number: links to it
   would break. A phase added later takes the next unused number, and its row goes
@@ -172,9 +175,48 @@ A phase document holds, in this order:
   need no revision row. Adding, changing, or removing a task or a Done when
   condition does.
 
+### Feature requests and bugs
+
+Classify each change the user feeds back before recording it. A bug is behaviour
+that contradicts the plan or the user's stated expectation of delivered work. A
+feature request asks for behaviour the plan does not describe. When the user's
+description fits both, ask which it is.
+
+- A feature request becomes a task at the end of the current phase's Tasks, or of
+  the phase the user names. The current phase is the first phase in `task.md` that
+  is neither `done` nor `dropped`. When every phase is `done` or `dropped`,
+  propose a new phase. Agree its feature entry first (see Keeping the plan
+  current).
+- Every bug goes in `tasks/bugs.md`, never in a phase document. A defect in a task
+  not yet ticked is part of that task, not a bug.
+- Record a bug before starting to fix it. Diagnose it by elimination
+  ([[elimination-debugging]]), and fix it with a regression test
+  ([[testing-standards]]).
+
+`tasks/bugs.md` holds one entry per bug, newest first:
+
+```markdown
+# Bugs
+
+### B2: Export fails for a report with no rows
+- Reported: 2026-03-05
+- Status: open
+- Observed: The export returns a 500 error.
+- Expected: An export containing only the header row.
+- Reproduce: Schedule an export of a report filtered to no rows.
+```
+
+- Number bugs `B1` upwards. Never renumber or reuse a number.
+- Status is `open`, `in progress`, `fixed`, or `won't fix`. Set `fixed` only when
+  the regression test fails without the fix and passes with it. `won't fix` is the
+  user's decision; give the reason on a `Reason:` line.
+- Keep every entry, fixed or not. Deleting one loses the record that it happened.
+- `tasks/bugs.md` has no revision history: each entry carries its own date, and
+  status changes are progress.
+
 ## Revision history
 
-The last section of every plan document is a table, at most one row per commit
+The last section of every plan document except `tasks/bugs.md` is a table, at most one row per commit
 that changed the document, newest first:
 
 ```markdown
@@ -214,5 +256,7 @@ that changed the document, newest first:
 - [ ] Feature statuses match reality.
 - [ ] `task.md` lists every phase with a status that matches reality, each linked to its `tasks/task_phase_<n>.md`.
 - [ ] Every ticked task is done and its tests pass.
+- [ ] Every bug the user reported is in `tasks/bugs.md`, and no bug is in a phase document.
+- [ ] Every `fixed` bug has a regression test that fails without the fix.
 - [ ] Each document this commit alters has exactly one uncommitted revision row, dated and covering the whole commit.
 - [ ] No secret or personal data in the plan.

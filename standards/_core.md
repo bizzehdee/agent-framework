@@ -23,7 +23,8 @@ These apply always. Do not wait to load a standard before honouring them.
    for and what is in scope. Update the document that owns the changed section —
    and its one revision row for the commit — in the same change that adds,
    changes, or removes a feature. Read `task.md` and the current phase's document in `tasks/`
-   before starting work, and tick a task there only when it is done.
+   before starting work, and tick a task there only when it is done. Record a
+   reported bug in `tasks/bugs.md` before fixing it.
    Detail: `existing-project-conventions`, `learnings`, `project-planning`.
 3. **Tests must pass before a task is done.** Do not mark a checkbox or report
    completion until you have run the tests and observed them pass. If they fail,
