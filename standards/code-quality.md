@@ -15,7 +15,8 @@ or names no concern, the unit is two units or none.
 
 - Split code into its logical components. A file holds one type, or one cohesive
   group of functions serving one concern. Where the language's idiom differs, such
-  as a header and source pair, follow the idiom.
+  as a header and source pair, follow the idiom and say why
+  ([[existing-project-conventions]]).
 - No monolithic files. A file's concern count is the test, not its length: a long
   file with one concern is acceptable; a short file with two is not. Split a file
   in the change that would add a second concern to it.
