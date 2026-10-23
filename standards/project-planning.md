@@ -75,8 +75,13 @@ documents together, not one at a time, and check for:
   candidate resolutions as options. At most five per turn.
 - Fix each finding in the document that owns the fact, as the user resolves it.
   Never resolve one by guessing: the plan states only what the user decided.
-- A finding the user chooses to leave undecided goes in its document's Open
-  questions. No task may depend on it until it is decided.
+- Leaving a finding undecided is the user's choice, never yours. Ask the user to
+  resolve it or to leave it undecided; never defer one on your own initiative. An
+  unanswered or unclear reply is not a choice: ask again.
+- A finding the user chose to leave undecided goes in its document's Open
+  questions, ending `(left open by the user, YYYY-MM-DD)` with the date of the
+  choice. No task may depend on it until it is decided.
+- An Open questions entry without that marker is a finding.
 - Review again after the fixes. The plan passes when a full review finds nothing
   new.
 
@@ -194,6 +199,7 @@ document, newest first:
 - [ ] No fact stated in more than one plan document.
 - [ ] No requirement in the plan that the user did not state.
 - [ ] The plan passed a review for ambiguity, contradiction, and missing context before any task was derived from it.
+- [ ] Every finding left undecided was left so by the user's explicit choice.
 - [ ] Every undecided item listed under its document's Open questions with an owner.
 - [ ] Feature statuses match reality.
 - [ ] Each document this commit alters has exactly one uncommitted revision row, dated and covering the whole commit.
