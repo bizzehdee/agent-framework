@@ -4,7 +4,10 @@ name: Verify
 # What must hold is that the test suite passes on every supported platform.
 
 on:
+  # Pushes to a pull request's branch are covered by the pull_request event, so
+  # push runs only on main. Without the filter every PR commit runs twice.
   push:
+    branches: [main]
     paths: ['standards/**', 'build.ps1', 'build.sh', 'install.ps1', 'install.sh', 'test.sh', '.github/workflows/verify-generators.yml']
   pull_request:
     paths: ['standards/**', 'build.ps1', 'build.sh', 'install.ps1', 'install.sh', 'test.sh', '.github/workflows/verify-generators.yml']
@@ -14,6 +17,9 @@ jobs:
   test:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    # A healthy Windows run takes 5-10 minutes. Without a limit, a genuine hang
+    # holds the runner for GitHub's 6-hour default.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
