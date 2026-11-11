@@ -146,6 +146,31 @@ for f in "$REPO_ROOT"/standards/*.md; do
 done
 assert_eq 'every standard declares a stack' "${STACK_MISSING:-none}" 'none'
 
+# [[links]] are how standards cross-reference each other. A rename that leaves a
+# dangling reference is exactly the drift this suite exists to catch.
+BAD_REFS=""
+for f in "$REPO_ROOT"/standards/*.md; do
+    b=$(basename "$f" .md)
+    for r in $(grep -o '\[\[[a-z0-9-]*\]\]' "$f" 2>/dev/null | sed 's/^..//;s/..$//' | LC_ALL=C sort -u); do
+        [ -f "$REPO_ROOT/standards/$r.md" ] || BAD_REFS="$BAD_REFS $b->$r"
+    done
+done
+assert_eq 'every [[link]] names an existing standard' "${BAD_REFS:-none}" 'none'
+
+# A universal standard linking a stack-scoped one would dangle in any install
+# whose stack set excludes the target.
+CROSS_REFS=""
+for f in "$REPO_ROOT"/standards/*.md; do
+    b=$(basename "$f" .md)
+    [ "$(sed -n 's/^stack: //p' "$f" | head -n 1)" = "any" ] || continue
+    for r in $(grep -o '\[\[[a-z0-9-]*\]\]' "$f" 2>/dev/null | sed 's/^..//;s/..$//' | LC_ALL=C sort -u); do
+        [ -f "$REPO_ROOT/standards/$r.md" ] || continue
+        [ "$(sed -n 's/^stack: //p' "$REPO_ROOT/standards/$r.md" | head -n 1)" = "any" ] || \
+            CROSS_REFS="$CROSS_REFS $b->$r"
+    done
+done
+assert_eq 'no universal standard links a stack-scoped one' "${CROSS_REFS:-none}" 'none'
+
 # --- 3. Frontmatter validation is enforced --------------------------------
 
 section '3. Frontmatter validation is enforced'
