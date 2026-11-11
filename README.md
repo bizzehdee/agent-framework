@@ -227,6 +227,24 @@ Universal (`stack: any`):
 |---|---|
 | `environments-and-packaging` | Virtual environments, pyproject as source of truth, lockfiles, no path hacks. |
 
+`stack: node`:
+
+| Standard | Covers |
+|---|---|
+| `node-packaging` | One package manager per repo, committed lockfiles, exact installs in CI, declared engines, no unpinned npx. |
+
+`stack: go`:
+
+| Standard | Covers |
+|---|---|
+| `go-modules` | go.mod/go.sum as the record, tidy on every change, toolchain pinning, vendoring policy, gofmt and vet. |
+
+`stack: rust`:
+
+| Standard | Covers |
+|---|---|
+| `rust-cargo` | Manifest and lockfile discipline, pinned edition, rustfmt and clippy as done, additive features, justified unsafe. |
+
 `stack: c-cpp`:
 
 | Standard | Covers |
