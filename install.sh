@@ -201,30 +201,39 @@ detect_stacks() {
     ds_found=""
     ds_add() { case " $ds_found " in *" $1 "*) ;; *) ds_found="$ds_found $1" ;; esac; }
 
-    ds_has() {
-        find "$DESTINATION" -maxdepth 3 -name "$1" -not -path '*/node_modules/*' \
-            -not -path '*/.git/*' -print 2>/dev/null | head -n 1 | grep -q .
-    }
+    # One find for every marker rather than one per marker: process creation is
+    # expensive on Windows, and one spawn beats seventeen.
+    ds_all=$(find "$DESTINATION" -maxdepth 3 \( -name node_modules -o -name .git \) -prune -o \
+        -type f \( -name '*.sln' -o -name '*.slnx' -o -name '*.csproj' -o -name '*.fsproj' \
+        -o -name '*.vbproj' -o -name 'global.json' -o -name 'pyproject.toml' \
+        -o -name 'setup.py' -o -name 'requirements.txt' -o -name 'Pipfile' \
+        -o -name 'Cargo.toml' -o -name 'CMakeLists.txt' -o -name '*.vcxproj' \
+        -o -name 'meson.build' -o -name 'package.json' -o -name 'go.mod' \
+        -o -name 'project.godot' \) -print 2>/dev/null)
 
-    ds_has '*.sln'          && ds_add dotnet
-    ds_has '*.slnx'         && ds_add dotnet
-    ds_has '*.csproj'       && ds_add dotnet
-    ds_has '*.fsproj'       && ds_add dotnet
-    ds_has '*.vbproj'       && ds_add dotnet
-    ds_has 'global.json'    && ds_add dotnet
-    ds_has 'pyproject.toml' && ds_add python
-    ds_has 'setup.py'       && ds_add python
-    ds_has 'requirements.txt' && ds_add python
-    ds_has 'Pipfile'        && ds_add python
-    ds_has 'Cargo.toml'     && ds_add rust
-    ds_has 'CMakeLists.txt' && ds_add c-cpp
-    ds_has '*.vcxproj'      && ds_add c-cpp
-    ds_has 'meson.build'    && ds_add c-cpp
-    ds_has 'package.json'   && ds_add node
-    ds_has 'go.mod'         && ds_add go
-    ds_has 'project.godot'  && ds_add godot
+    while IFS= read -r ds_f; do
+        [ -n "$ds_f" ] || continue
+        case "${ds_f##*/}" in
+            *.sln|*.slnx|*.csproj|*.fsproj|*.vbproj|global.json)  ds_add dotnet ;;
+            pyproject.toml|setup.py|requirements.txt|Pipfile)     ds_add python ;;
+            Cargo.toml)                                           ds_add rust ;;
+            CMakeLists.txt|*.vcxproj|meson.build)                 ds_add c-cpp ;;
+            package.json)                                         ds_add node ;;
+            go.mod)                                               ds_add go ;;
+            project.godot)                                        ds_add godot ;;
+        esac
+    done <<DSEOF
+$ds_all
+DSEOF
 
-    echo "$ds_found" | sed 's/^ //'
+    # Emitted in the fixed order the checks once ran in, so the recorded stack
+    # stamp does not depend on filesystem traversal order and agrees with
+    # Get-ProjectStacks in install.ps1.
+    ds_ordered=""
+    for ds_s in dotnet python rust c-cpp node go godot; do
+        case " $ds_found " in *" $ds_s "*) ds_ordered="$ds_ordered $ds_s" ;; esac
+    done
+    echo "$ds_ordered" | sed 's/^ //'
 }
 
 tool_label() {
@@ -528,7 +537,8 @@ copy_one() {
         echo x >> "$COUNT_DIR/written"
         return
     fi
-    mkdir -p "$(dirname "$cp_dest")"
+    cp_dir=${cp_dest%/*}
+    [ -d "$cp_dir" ] || mkdir -p "$cp_dir"
     cp -f "$cp_src" "$cp_dest"
     echo "  + $cp_dest"
     echo x >> "$COUNT_DIR/written"
@@ -600,11 +610,15 @@ printf '%s\n' "$SOURCE_NAMES" > "$COUNT_DIR/names"
 : > "$COUNT_DIR/stale"
 : > "$COUNT_DIR/foreign"
 
+# The expected list as one |-delimited string, checked with a case match: a
+# grep per walked file was a process per file, which Windows made expensive.
+EXPECTED_SET="|$(tr '\n' '|' < "$COUNT_DIR/expected")"
+
 for md in $MANAGED_DIRS; do
     [ -d "$DESTINATION/$md" ] || continue
     ( cd "$DESTINATION/$md" && find . -type f -print ) | sed 's|^\./||' |
     while IFS= read -r rel; do
-        grep -Fxq "$md/$rel" "$COUNT_DIR/expected" && continue
+        case "$EXPECTED_SET" in *"|$md/$rel|"*) continue ;; esac
         # The standard's name is the directory for a skill, the basename otherwise.
         case "$rel" in
             */*/*)             lo_name="" ;;

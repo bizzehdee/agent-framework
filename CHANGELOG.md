@@ -36,6 +36,11 @@ what sits between them. Dates are the day the change landed on `main`.
 
 ### Changed
 
+- Windows builds and installs run ~3x faster: frontmatter and triggers are
+  parsed in one awk pass instead of one process per lookup, per-file pipelines
+  are single processes, and stack detection is one `find` instead of seventeen.
+  Output is byte-identical.
+
 - Core rule 2 split in two: repository conventions and learnings, and the
   planning and tracking documents, are now separate non-negotiables (ten in
   all).

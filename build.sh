@@ -97,55 +97,114 @@ fi
 # Frontmatter is hand-parsed: single-line "key: value" pairs only, so there is
 # no YAML dependency. Mirrors Read-Standard in build.ps1.
 
-# Spawns one awk per lookup, and is called several times per standard per adapter,
-# so a full build costs a few hundred processes. Process creation dominates the
-# runtime: roughly 29s on Windows against 2s for build.ps1, much closer on Linux
-# and macOS. Cache the parsed frontmatter in shell variables if that becomes a
-# problem.
-frontmatter_value() {
-    awk -v key="$2" '
-        NR == 1 { if ($0 !~ /^---[[:space:]]*$/) { exit 1 } ; next }
-        /^---[[:space:]]*$/ { exit }
-        {
+# Process creation dominates the runtime on Windows, where a spawn costs
+# 50-100x what it does on Linux, so the frontmatter of every standard is parsed
+# once, by one awk pass, into shell variables. A lookup is then a parameter
+# expansion, not a process.
+
+# Pure sh, no fork: converts a standard name to a variable-name-safe form in
+# MANGLED ("code-quality" -> "code_quality").
+mangle() {
+    MANGLED=""
+    m_rest=$1
+    while [ -n "$m_rest" ]; do
+        m_c=${m_rest%"${m_rest#?}"}
+        m_rest=${m_rest#?}
+        [ "$m_c" != "-" ] || m_c="_"
+        MANGLED="$MANGLED$m_c"
+    done
+}
+
+# Emits FM_<key>_<mangled-name>='value' assignments for every standard, plus
+# FM_open_/FM_closed_ flags for the delimiter checks, then evals them. Values
+# are single-quote escaped by awk, and only the four known keys are emitted, so
+# the eval cannot execute file content. Mirrors Read-Standard in build.ps1.
+load_frontmatter() {
+    eval "$(awk '
+        # The trigger is derived here too, in the same pass, so the table needs
+        # no further process per standard. Mirrors Get-Trigger in build.ps1.
+        function trigger(d,   out, rest, j, k2, clause, i2) {
+            i2 = index(d, "DO NOT USE FOR")
+            if (i2 > 0) d = substr(d, 1, i2 - 1)
+            out = ""; rest = d
+            while ((j = index(rest, "USE FOR ")) > 0) {
+                rest = substr(rest, j + 8)
+                k2 = index(rest, "USE FOR ")
+                clause = (k2 > 0) ? substr(rest, 1, k2 - 1) : rest
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", clause)
+                sub(/\.$/, "", clause)
+                if (clause != "") out = (out == "") ? clause : out "; " clause
+                if (k2 == 0) break
+            }
+            if (out == "") { out = d; sub(/\..*$/, "", out) }
+            gsub(/[[:space:]]+/, " ", out)
+            return out
+        }
+        FNR == 1 {
+            name = FILENAME; sub(/.*\//, "", name); sub(/\.md$/, "", name)
+            mangled = name; gsub(/-/, "_", mangled)
+            infm = 0
+            if ($0 ~ /^---[[:space:]]*$/) { infm = 1; print "FM_open_" mangled "=1" }
+            next
+        }
+        infm && /^---[[:space:]]*$/ { infm = 0; print "FM_closed_" mangled "=1"; next }
+        infm {
             i = index($0, ":")
             if (i < 2) next
             k = substr($0, 1, i - 1)
             gsub(/^[[:space:]]+|[[:space:]]+$/, "", k)
-            if (k != key) next
+            if (k !~ /^(name|description|globs|stack)$/) next
+            if (seen[mangled, k]++) next
             v = substr($0, i + 1)
             gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
-            print v
-            exit
+            if (k == "description") {
+                t = trigger(v)
+                gsub(/\047/, "\047\\\047\047", t)
+                print "FM_trigger_" mangled "=\047" t "\047"
+            }
+            gsub(/\047/, "\047\\\047\047", v)
+            print "FM_" k "_" mangled "=\047" v "\047"
         }
-    ' "$1"
+    ' "$STANDARDS_DIR"/*.md)"
+}
+
+frontmatter_value() {
+    fv_base=${1##*/}; fv_base=${fv_base%.md}
+    mangle "$fv_base"
+    eval "printf '%s\n' \"\${FM_${2}_${MANGLED}:-}\""
 }
 
 standard_body() {
     # Everything after the closing frontmatter delimiter, blank edges trimmed.
+    # One awk pass: the three stages (skip frontmatter, trim lead, trim tail)
+    # were separate processes once, which Windows made expensive.
     awk '
         NR == 1 { next }
         !seen && /^---[[:space:]]*$/ { seen = 1; next }
-        seen { print }
-    ' "$1" | awk 'NF { started = 1 } started { print }' | awk '
-        { lines[NR] = $0 }
-        END { last = 0; for (i = 1; i <= NR; i++) if (lines[i] ~ /[^[:space:]]/) last = i
+        !seen { next }
+        !started && !NF { next }
+        { started = 1; lines[++n] = $0 }
+        END { last = 0; for (i = 1; i <= n; i++) if (lines[i] ~ /[^[:space:]]/) last = i
               for (i = 1; i <= last; i++) print lines[i] }
-    '
+    ' "$1"
 }
 
 validate_standard() {
     vs_file="$1"
-    vs_base=$(basename "$vs_file" .md)
-    head -n 1 "$vs_file" | grep -q '^---[[:space:]]*$' || {
+    vs_base=${vs_file##*/}; vs_base=${vs_base%.md}
+    mangle "$vs_base"; vs_m=$MANGLED
+    eval "vs_open=\${FM_open_$vs_m:-0}"
+    [ "$vs_open" = "1" ] || {
         echo "$vs_file: missing opening frontmatter delimiter '---' on line 1." >&2; exit 1; }
-    awk 'NR > 1 && /^---[[:space:]]*$/ { found = 1; exit } END { exit !found }' "$vs_file" || {
+    eval "vs_closed=\${FM_closed_$vs_m:-0}"
+    [ "$vs_closed" = "1" ] || {
         echo "$vs_file: missing closing frontmatter delimiter '---'." >&2; exit 1; }
     for vs_key in name description; do
-        vs_val=$(frontmatter_value "$vs_file" "$vs_key")
+        eval "vs_val=\${FM_${vs_key}_$vs_m:-}"
         [ -n "$vs_val" ] || {
             echo "$vs_file: frontmatter is missing required key '$vs_key'." >&2; exit 1; }
     done
-    vs_name=$(frontmatter_value "$vs_file" name)
+    eval "vs_name=\${FM_name_$vs_m:-}"
     [ "$vs_name" = "$vs_base" ] || {
         echo "$vs_file: frontmatter name '$vs_name' must match the filename '$vs_base'." >&2; exit 1; }
 }
@@ -168,12 +227,18 @@ sha256_hex() {
 }
 
 standards_version() {
-    for sv_f in $(ls "$STANDARDS_DIR"/*.md | LC_ALL=C sort); do
-        printf '%s\n' "$(basename "$sv_f")"
-        tr -d '\r' < "$sv_f"
-    done | sha256_hex | cut -c1-8
+    # One awk over every file, not one tr per file: this runs on each build and
+    # Windows pays dearly per process. awk re-adds a missing final newline where
+    # tr would not, so a source file must end with one; the cross-shell hash
+    # test catches a divergence.
+    # shellcheck disable=SC2046
+    awk '
+        FNR == 1 { n = FILENAME; sub(/.*\//, "", n); print n }
+        { gsub(/\r/, ""); print }
+    ' $(ls "$STANDARDS_DIR"/*.md | LC_ALL=C sort) | sha256_hex | cut -c1-8
 }
 
+load_frontmatter
 STANDARDS_VERSION=$(standards_version)
 
 CORE_FILE="$STANDARDS_DIR/_core.md"
@@ -183,7 +248,7 @@ CORE_BODY=$(standard_body "$CORE_FILE")
 
 STANDARD_NAMES=$(
     for f in "$STANDARDS_DIR"/*.md; do
-        b=$(basename "$f" .md)
+        b=${f##*/}; b=${b%.md}
         # Skip underscore-prefixed files such as _core.md. ${b#_} strips one
         # leading underscore, so a difference means there was one.
         # Do not use a case statement here: this runs inside $( ), and macOS
@@ -209,7 +274,8 @@ REQUESTED_STACKS=$(echo "$STACKS" | tr ',' ' ' | tr '[:upper:]' '[:lower:]')
 STACKS_STAMP=$(echo "$REQUESTED_STACKS" | tr -s ' ' | sed 's/^ //;s/ $//' | tr ' ' ',')
 
 stack_matches() {
-    sm_declared=$(frontmatter_value "$STANDARDS_DIR/$1.md" stack)
+    mangle "$1"
+    eval "sm_declared=\${FM_stack_$MANGLED:-}"
     [ -n "$sm_declared" ] || sm_declared="any"
     [ "$sm_declared" != "any" ] || return 0
     case " $REQUESTED_STACKS " in *" all "*) return 0 ;; esac
@@ -226,7 +292,9 @@ for n in $STANDARD_NAMES; do
         INCLUDED="$INCLUDED$n
 "
     else
-        EXCLUDED="$EXCLUDED, $n ($(frontmatter_value "$STANDARDS_DIR/$n.md" stack))"
+        mangle "$n"
+        eval "ex_stack=\${FM_stack_$MANGLED:-any}"
+        EXCLUDED="$EXCLUDED, $n ($ex_stack)"
     fi
 done
 STANDARD_NAMES=$(printf '%s' "$INCLUDED")
@@ -242,11 +310,13 @@ printf 'Output: %s\n' "$OUTPUT_ROOT"
 write_generated() {
     wg_rel="$1"
     wg_full="$OUTPUT_ROOT/$wg_rel"
-    mkdir -p "$(dirname "$wg_full")"
+    wg_dir=${wg_full%/*}
+    [ -d "$wg_dir" ] || mkdir -p "$wg_dir"
     # Strip CR, drop trailing blank lines, guarantee exactly one final newline,
-    # so output matches build.ps1 byte for byte on every platform.
-    tr -d '\r' | awk '
-        { lines[NR] = $0 }
+    # so output matches build.ps1 byte for byte on every platform. One awk, not
+    # tr piped into awk: one process per written file instead of two.
+    awk '
+        { gsub(/\r/, ""); lines[NR] = $0 }
         END { last = 0; for (i = 1; i <= NR; i++) if (lines[i] ~ /[^[:space:]]/) last = i
               for (i = 1; i <= last; i++) print lines[i] }
     ' > "$wg_full"
@@ -255,31 +325,11 @@ write_generated() {
 
 get_trigger() {
     # One-line trigger derived from the description's USE FOR clauses, so the
-    # table and the frontmatter can never disagree. Mirrors Get-Trigger.
-    frontmatter_value "$STANDARDS_DIR/$1.md" description | awk '
-        {
-            # Drop the DO NOT USE FOR clause first. "DO NOT USE FOR" contains the
-            # literal "USE FOR", so matching it first would capture exclusions as
-            # triggers and invert the rule.
-            i = index($0, "DO NOT USE FOR")
-            if (i > 0) $0 = substr($0, 1, i - 1)
-
-            out = ""
-            rest = $0
-            while ((j = index(rest, "USE FOR ")) > 0) {
-                rest = substr(rest, j + 8)
-                k = index(rest, "USE FOR ")
-                clause = (k > 0) ? substr(rest, 1, k - 1) : rest
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", clause)
-                sub(/\.$/, "", clause)
-                if (clause != "") out = (out == "") ? clause : out "; " clause
-                if (k == 0) break
-            }
-            if (out == "") { out = $0; sub(/\..*$/, "", out) }
-            gsub(/[[:space:]]+/, " ", out)
-            print out
-        }
-    '
+    # table and the frontmatter can never disagree. Computed in load_frontmatter;
+    # the "DO NOT USE FOR" clause is dropped before "USE FOR" is matched there,
+    # because the former contains the latter.
+    mangle "$1"
+    eval "printf '%s\n' \"\${FM_trigger_$MANGLED:-}\""
 }
 
 # The checklist as rules: each "- [ ] item" line becomes "- item". The lite
@@ -313,9 +363,10 @@ GENERATED_NOTICE="<!-- GENERATED FILE. Do not edit.
 
 if [ "$LITE" -eq 0 ]; then
     for n in $STANDARD_NAMES; do
+        mangle "$n"
+        eval "sk_desc=\${FM_description_$MANGLED:-}"
         {
-            printf -- '---\nname: %s\ndescription: %s\n---\n\n' \
-                "$n" "$(frontmatter_value "$STANDARDS_DIR/$n.md" description)"
+            printf -- '---\nname: %s\ndescription: %s\n---\n\n' "$n" "$sk_desc"
             printf '%s\n\n' "$GENERATED_NOTICE"
             standard_body "$STANDARDS_DIR/$n.md"
         } | write_generated ".agents/skills/$n/SKILL.md"
@@ -428,9 +479,10 @@ fi
 # one instruction to read the canonical file.
 if has_adapter claude; then
     for n in $STANDARD_NAMES; do
+        mangle "$n"
+        eval "cl_desc=\${FM_description_$MANGLED:-}"
         {
-            printf -- '---\nname: %s\ndescription: %s\n---\n\n' \
-                "$n" "$(frontmatter_value "$STANDARDS_DIR/$n.md" description)"
+            printf -- '---\nname: %s\ndescription: %s\n---\n\n' "$n" "$cl_desc"
             printf '%s\n\n' "$GENERATED_NOTICE"
             printf 'Read `%s/%s/SKILL.md` in full before starting this work, then\n' \
                 "$SKILLS_PATH" "$n"
@@ -461,7 +513,8 @@ EOF
     } | write_generated '.github/copilot-instructions.md'
 
     for n in $STANDARD_NAMES; do
-        globs=$(frontmatter_value "$STANDARDS_DIR/$n.md" globs)
+        mangle "$n"
+        eval "globs=\${FM_globs_$MANGLED:-}"
         [ -n "$globs" ] || continue
         {
             printf -- "---\napplyTo: '%s'\n---\n%s\n\n" "$globs" "$GENERATED_NOTICE"
