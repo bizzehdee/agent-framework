@@ -30,6 +30,10 @@
     .agents/skills. A user-level install passes ~/.agents/skills, because there
     is no project root.
 
+.PARAMETER Lite
+    Emit a single AGENTS.md for small-context local models: the core rules plus
+    each standard's checklist, inline. No skills tree, and adapters are refused.
+
 .EXAMPLE
     ./build.ps1 -OutputRoot ../my-project
     Emit AGENTS.md and .agents/skills/ only.
@@ -46,7 +50,9 @@ param(
 
     [string[]]$Stacks = @('all'),
 
-    [string]$SkillsPath = '.agents/skills'
+    [string]$SkillsPath = '.agents/skills',
+
+    [switch]$Lite
 )
 
 $SkillsPath = $SkillsPath.TrimEnd('/', '\')
@@ -81,6 +87,12 @@ foreach ($a in $requested) {
 if ($requested -contains 'all') { $selected = $KnownAdapters }
 elseif ($requested -contains 'none') { $selected = @() }
 else { $selected = @($requested | Select-Object -Unique) }
+
+# Lite is one always-on file: there is no skills tree for an adapter to point at.
+if ($Lite -and $selected.Count -gt 0) {
+    [Console]::Error.WriteLine('-Lite emits a single AGENTS.md; adapters do not apply.')
+    exit 2
+}
 
 # --- Source parsing -------------------------------------------------------
 
@@ -231,10 +243,28 @@ function Get-Trigger {
     return (($useFor -join '; ') -replace '\s+', ' ')
 }
 
+# The checklist as rules: each "- [ ] item" line becomes "- item". The lite
+# build inlines these as a standard's whole content. Mirrors get_checklist.
+function Get-Checklist {
+    param([Parameter(Mandatory)][hashtable]$Standard)
+    $rules = [System.Collections.Generic.List[string]]::new()
+    $inChecklist = $false
+    foreach ($line in ($Standard.Body -split "`n")) {
+        if ($line -match '^## Checklist') { $inChecklist = $true; continue }
+        if ($inChecklist -and $line -match '^## ') { break }
+        if ($inChecklist -and $line.StartsWith('- [ ] ')) { $rules.Add('- ' + $line.Substring(6)) }
+    }
+    return $rules
+}
+
+# The mode is stamped so -Check and -Upgrade regenerate what was installed
+# rather than comparing a lite install against a full build.
+$modeStamp = if ($Lite) { ' | mode: lite' } else { '' }
+
 $generatedNotice = @"
 <!-- GENERATED FILE. Do not edit.
      Source: standards/*.md in the agent-framework repository.
-     Standards version: $standardsVersion | stacks: $stacksStamp -->
+     Standards version: $standardsVersion | stacks: $stacksStamp$modeStamp -->
 "@
 
 # --- .agents/skills/ ------------------------------------------------------
@@ -247,8 +277,9 @@ $generatedNotice = @"
 # passed through. A standard excluded by stack is never emitted, or the target
 # gains rules for a language it does not use.
 
-foreach ($s in $standards) {
-    Write-Generated ".agents/skills/$($s.Name)/SKILL.md" @"
+if (-not $Lite) {
+    foreach ($s in $standards) {
+        Write-Generated ".agents/skills/$($s.Name)/SKILL.md" @"
 ---
 name: $($s.Name)
 description: $($s.Description)
@@ -258,7 +289,51 @@ $generatedNotice
 
 $($s.Body)
 "@
+    }
 }
+
+# --- AGENTS.md (lite) -------------------------------------------------------
+# One always-on file for models with small context windows and weak on-demand
+# loading: the core rules plus each standard's checklist, inline. No trigger
+# table, because a small model cannot be relied on to go and load a file.
+
+if ($Lite) {
+    $liteSections = foreach ($s in $standards) {
+        $rules = (Get-Checklist $s) -join "`n"
+        "### $($s.Name)`n`nWhen: $(Get-Trigger $s).`n`n$rules"
+    }
+
+    Write-Generated 'AGENTS.md' @"
+# Agent instructions
+
+$generatedNotice
+
+This is the lite build. Every rule is in this one file; there is nothing else
+to load. Follow the non-negotiables always. Each standard below binds whenever
+its "When" line matches the work you are doing.
+
+$($core.Body)
+
+## Standards
+
+$($liteSections -join "`n`n")
+
+## Precedence
+
+Highest authority first:
+
+1. An explicit instruction from the user in the current conversation.
+2. This repository's own documented conventions and tooling configuration.
+3. The patterns used in the surrounding code.
+4. The conventions of the language being written.
+5. The standards listed above.
+
+The single exception is security. Rule 1 of the non-negotiables outranks a
+repository or language convention that is insecure. Raise it rather than
+following it.
+"@
+}
+else {
 
 # --- AGENTS.md ------------------------------------------------------------
 # The vendor-neutral entry point. Read natively by Codex, Cursor, Copilot,
@@ -314,6 +389,8 @@ The single exception is security. Rule 1 of the non-negotiables outranks a
 repository or language convention that is insecure. Raise it rather than
 following it.
 "@
+
+}
 
 # --- Optional adapters ----------------------------------------------------
 # Each adds a tool-specific directory. Off unless explicitly requested. Neither

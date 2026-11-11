@@ -24,6 +24,9 @@
 #   --skills-path PATH  Where AGENTS.md and the adapters say the skills live
 #                       (default: .agents/skills). A user-level install passes
 #                       ~/.agents/skills, because there is no project root.
+#   --lite              Emit a single AGENTS.md for small-context local models:
+#                       the core rules plus each standard's checklist, inline.
+#                       No skills tree, and adapters are refused.
 #   -h, --help          Show this help.
 
 set -eu
@@ -34,6 +37,7 @@ OUTPUT_ROOT=""
 ADAPTERS="none"
 STACKS="all"
 SKILLS_PATH=".agents/skills"
+LITE=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -42,7 +46,8 @@ while [ $# -gt 0 ]; do
         --stacks) shift; [ $# -gt 0 ] || { echo "--stacks needs a value" >&2; exit 2; }; STACKS="$1" ;;
         --skills-path) shift; [ $# -gt 0 ] || { echo "--skills-path needs a value" >&2; exit 2; }
                        SKILLS_PATH=$(echo "$1" | sed 's|/*$||') ;;
-        -h|--help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --lite) LITE=1 ;;
+        -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
     shift
@@ -82,6 +87,11 @@ case " $REQUESTED " in
 esac
 
 has_adapter() { case " $SELECTED " in *" $1 "*) return 0 ;; *) return 1 ;; esac }
+
+# Lite is one always-on file: there is no skills tree for an adapter to point at.
+if [ "$LITE" -eq 1 ] && [ -n "$SELECTED" ]; then
+    echo "--lite emits a single AGENTS.md; adapters do not apply." >&2; exit 2
+fi
 
 # --- Source parsing -------------------------------------------------------
 # Frontmatter is hand-parsed: single-line "key: value" pairs only, so there is
@@ -272,9 +282,24 @@ get_trigger() {
     '
 }
 
+# The checklist as rules: each "- [ ] item" line becomes "- item". The lite
+# build inlines these as a standard's whole content. Mirrors Get-Checklist.
+get_checklist() {
+    awk '
+        /^## Checklist/      { in_cl = 1; next }
+        in_cl && /^## /      { exit }
+        in_cl && /^- \[ \] / { print "- " substr($0, 7) }
+    ' "$STANDARDS_DIR/$1.md"
+}
+
+# The mode is stamped so --check and --upgrade regenerate what was installed
+# rather than comparing a lite install against a full build.
+MODE_STAMP=""
+[ "$LITE" -eq 0 ] || MODE_STAMP=" | mode: lite"
+
 GENERATED_NOTICE="<!-- GENERATED FILE. Do not edit.
      Source: standards/*.md in the agent-framework repository.
-     Standards version: $STANDARDS_VERSION | stacks: $STACKS_STAMP -->"
+     Standards version: $STANDARDS_VERSION | stacks: $STACKS_STAMP$MODE_STAMP -->"
 
 # --- .agents/skills/ ------------------------------------------------------
 # The canonical copy, and the only one. Agent Skills is an open format, so a
@@ -286,14 +311,54 @@ GENERATED_NOTICE="<!-- GENERATED FILE. Do not edit.
 # passed through. A standard excluded by stack is never emitted, or the target
 # gains rules for a language it does not use.
 
-for n in $STANDARD_NAMES; do
-    {
-        printf -- '---\nname: %s\ndescription: %s\n---\n\n' \
-            "$n" "$(frontmatter_value "$STANDARDS_DIR/$n.md" description)"
-        printf '%s\n\n' "$GENERATED_NOTICE"
-        standard_body "$STANDARDS_DIR/$n.md"
-    } | write_generated ".agents/skills/$n/SKILL.md"
-done
+if [ "$LITE" -eq 0 ]; then
+    for n in $STANDARD_NAMES; do
+        {
+            printf -- '---\nname: %s\ndescription: %s\n---\n\n' \
+                "$n" "$(frontmatter_value "$STANDARDS_DIR/$n.md" description)"
+            printf '%s\n\n' "$GENERATED_NOTICE"
+            standard_body "$STANDARDS_DIR/$n.md"
+        } | write_generated ".agents/skills/$n/SKILL.md"
+    done
+fi
+
+# --- AGENTS.md (lite) -------------------------------------------------------
+# One always-on file for models with small context windows and weak on-demand
+# loading: the core rules plus each standard's checklist, inline. No trigger
+# table, because a small model cannot be relied on to go and load a file.
+
+if [ "$LITE" -eq 1 ]; then
+{
+    printf '# Agent instructions\n\n%s\n\n' "$GENERATED_NOTICE"
+    cat <<'EOF'
+This is the lite build. Every rule is in this one file; there is nothing else
+to load. Follow the non-negotiables always. Each standard below binds whenever
+its "When" line matches the work you are doing.
+EOF
+    printf '\n%s\n\n' "$CORE_BODY"
+    printf '## Standards\n'
+    for n in $STANDARD_NAMES; do
+        printf '\n### %s\n\nWhen: %s.\n\n' "$n" "$(get_trigger "$n")"
+        get_checklist "$n"
+    done
+    cat <<'EOF'
+
+## Precedence
+
+Highest authority first:
+
+1. An explicit instruction from the user in the current conversation.
+2. This repository's own documented conventions and tooling configuration.
+3. The patterns used in the surrounding code.
+4. The conventions of the language being written.
+5. The standards listed above.
+
+The single exception is security. Rule 1 of the non-negotiables outranks a
+repository or language convention that is insecure. Raise it rather than
+following it.
+EOF
+} | write_generated 'AGENTS.md'
+else
 
 # --- AGENTS.md ------------------------------------------------------------
 # The vendor-neutral entry point. Read natively by Codex, Cursor, Copilot,
@@ -349,6 +414,8 @@ repository or language convention that is insecure. Raise it rather than
 following it.
 EOF
 } | write_generated 'AGENTS.md'
+
+fi
 
 # --- Optional adapters ----------------------------------------------------
 # Each adds a tool-specific directory. Off unless explicitly requested. Neither
