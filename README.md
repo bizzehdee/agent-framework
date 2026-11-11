@@ -3,6 +3,41 @@
 Portable engineering standards for AI coding agents. One source of truth, a minimal
 footprint in the repositories you install into.
 
+## Quick install
+
+No clone and no installer needed. Download a package from the
+[latest release](https://github.com/bizzehdee/agent-framework/releases/latest)
+and extract it into your project's root directory. Each package is exactly what
+the installer writes, with no wrapping folder.
+
+| Package | Use it when | Adds |
+|---|---|---|
+| `agent-framework-X.Y.Z-generic.zip` | Codex, Cursor, Copilot, OpenCode, Gemini CLI, or any tool that reads `AGENTS.md` | `AGENTS.md` + `.agents/skills/` |
+| `agent-framework-X.Y.Z-claude.zip` | Claude Code | the generic contents + `.claude/skills/` |
+| `agent-framework-X.Y.Z-generic-lite.zip` | a local model or a small context window | a single `AGENTS.md` |
+
+With the GitHub CLI, from your project's root:
+
+```bash
+gh release download --repo bizzehdee/agent-framework --pattern '*-generic.zip'
+```
+
+```bash
+unzip agent-framework-*-generic.zip
+```
+
+On Windows, extract with `Expand-Archive agent-framework-*-generic.zip .` instead.
+
+**Running a local model, or anything with a small context window?** Use the
+`generic-lite` package. The full packages rely on the model loading a standard
+on demand when its trigger matches, which small models (9–12B, or a 27B-class
+MoE with a 128k window) do not do reliably. Lite puts every rule in one
+always-on `AGENTS.md` of roughly 5k tokens, with nothing else to load.
+
+The packages hold the standards for every stack. For an install filtered to
+your project's stacks, or to update an existing install, use the
+[installer](#install).
+
 ## What an install adds
 
 ```
@@ -40,15 +75,8 @@ two-entry install.
 To migrate an install made by an earlier version, see
 [Upgrading an existing install](#upgrading-an-existing-install).
 
-### Without the installer
-
-Each [GitHub release](../../releases) attaches packages that are exactly what
-the installer writes, so extracting one into a project root is an install:
-`generic` (`AGENTS.md` + `.agents/skills/`), `claude` (the same plus
-`.claude/skills/` pointers), and `generic-lite` (a single `AGENTS.md` for small
-local models). They hold every stack, since there is no project to detect one
-from; use the installer itself for a stack-filtered install. `--check` and
-`--upgrade` work on the extracted files as on any install.
+`--check` and `--upgrade` also work on files extracted from a
+[release package](#quick-install), as on any install.
 
 | Flag | Effect |
 |---|---|
