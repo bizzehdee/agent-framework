@@ -16,6 +16,10 @@ test.sh                 The test suite.
 
 Generated output is never committed. Everything is produced at install time.
 
+Record every user-visible change in `CHANGELOG.md` under Unreleased, in the same
+change that makes it. `--check` shows only two hashes; the changelog is what
+explains the gap between them.
+
 ## Editing a standard
 
 Standards must be as concise as possible while remaining wholly unambiguous. Add
