@@ -31,6 +31,19 @@ Rules for every plan document:
 - The plan holds decided intent; `.learnings/` holds facts discovered while
   working ([[learnings]]). Do not duplicate either into the other.
 
+## Scale to the project
+
+- A small or single-purpose project may keep every section inline in `plan.md`,
+  with no `docs/` directory: the overview and the section documents collapse
+  into one file, and its revision history covers the whole plan. Move a section
+  into `docs/<section>.md` when it outgrows a screen, when it needs its own
+  revision history, or when the user asks.
+- The Documents index is required only once the first `docs/` document exists.
+- Which planning and tracking documents a project keeps is the user's decision.
+  Offer the scaffolding once, sized to the project; when the user declines some
+  or all of it, work without what they declined and do not offer it again. A
+  missing document never blocks work.
+
 ## Writing the plan for a new project
 
 Produce the plan by interviewing the user, before writing any project code.
@@ -157,9 +170,10 @@ that it was considered.
   from the code and to confirm each reconstructed section with the user. Mark
   anything inferred from the code as inferred until the user confirms it. Never
   create a plan document silently.
-- A `plan.md` that holds a section's content inline, or a Milestones section,
-  predates this layout. Offer to move each such section into its document, and
-  milestones into `task.md` ([[task-tracking]]). Do not move it inside an
+- A `plan.md` holding a Milestones section predates this layout. Offer to move
+  the milestones into `task.md` ([[task-tracking]]). An inline section is the
+  small-project form (see Scale to the project); offer to move it into its own
+  document only when it has outgrown one. Do not move either inside an
   unrelated change.
 
 ## Revision history
