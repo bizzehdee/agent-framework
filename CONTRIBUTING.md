@@ -169,6 +169,34 @@ CI runs `test.sh` on Linux, where `/bin/sh` is dash, and on macOS, where it is
 bash 3.2, and `test.ps1` on Windows. The sh scripts are not exercised under Git
 for Windows' sh: a Windows user is expected to use the PowerShell scripts.
 
+## Releasing
+
+A tag named `release/X.Y.Z` publishes a GitHub release for `X.Y.Z`:
+
+```bash
+git tag release/1.2.0
+```
+
+```bash
+git push origin release/1.2.0
+```
+
+The `Release` workflow runs the sh suite, then attaches three packages. Each is
+exactly what `install.sh` writes into an empty project with `--stacks all`, so
+extracting one into a project root is the same as installing there:
+
+| Package | Installed with | Contents |
+|---|---|---|
+| `agent-framework-X.Y.Z-generic.zip` | no adapters | `AGENTS.md` + `.agents/skills/` |
+| `agent-framework-X.Y.Z-claude.zip` | `--adapters claude` | the generic contents + `.claude/skills/` pointers |
+| `agent-framework-X.Y.Z-generic-lite.zip` | `--lite` | a single `AGENTS.md` |
+
+Each archive has no wrapping folder, and `--check` and `--upgrade` work on the
+extracted files as on any install. A
+tag that is not three dot-separated numbers fails the workflow before anything
+is built. Before tagging, move the `Unreleased` entries in `CHANGELOG.md` under
+a heading for the version.
+
 ## Platform gotchas
 
 - **macOS `/bin/sh` is bash 3.2.** bash 3.2 rejects constructs both dash and Git

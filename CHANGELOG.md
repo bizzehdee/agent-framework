@@ -8,6 +8,9 @@ what sits between them. Dates are the day the change landed on `main`.
 
 ### Added
 
+- Release workflow: a `release/X.Y.Z` tag publishes a GitHub release with
+  prebuilt `generic`, `claude`, and `generic-lite` zip packages attached.
+
 - `process-control`: wait on and kill processes by PID, never by a
   command-line pattern the matching command itself contains, which makes a
   `pgrep -f` loop spin forever and a `pkill -f` kill its own shell.

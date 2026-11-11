@@ -1,0 +1,73 @@
+name: Release
+
+# Pushing a tag named release/X.Y.Z publishes a GitHub release for X.Y.Z with
+# three prebuilt packages attached. Generated output is never committed, so a
+# release is the only place to get the framework without running the installer.
+
+on:
+  push:
+    tags: ['release/*.*.*']
+
+# The default token is read-only; creating a release needs to write.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # The tag filter is a glob, so release/1.2.x would also match it. Refuse
+      # anything that is not three dot-separated numbers before building.
+      - name: Read the version from the tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#release/}"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Tag '$GITHUB_REF_NAME' is not release/X.Y.Z." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # A release must not ship from a tree whose suite fails.
+      - name: Test suite
+        run: sh ./test.sh
+
+      # Each package is what install.sh writes into an empty project, so
+      # extracting one into a project root is the same as installing there.
+      # --stacks all is explicit: an empty directory has no stack markers, and
+      # detection would otherwise install the universal standards only. The
+      # descriptions are stack-scoped, so a .NET standard does not trigger in a
+      # Python project.
+      - name: Install into the package directories
+        run: |
+          sh ./install.sh dist/generic -y --stacks all
+          sh ./install.sh dist/claude -y --stacks all --adapters claude
+          sh ./install.sh dist/generic-lite -y --stacks all --lite
+
+      # Each archive unpacks straight into a project root: AGENTS.md and the
+      # dot-directories sit at the top level, with no wrapping folder.
+      - name: Package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          for variant in generic claude generic-lite; do
+            ( cd "dist/$variant" && zip -r -q "../agent-framework-$VERSION-$variant.zip" . )
+          done
+          ls -l dist/*.zip
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$VERSION" \
+            --generate-notes \
+            --verify-tag \
+            dist/agent-framework-"$VERSION"-generic.zip \
+            dist/agent-framework-"$VERSION"-claude.zip \
+            dist/agent-framework-"$VERSION"-generic-lite.zip

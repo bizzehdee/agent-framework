@@ -40,6 +40,16 @@ two-entry install.
 To migrate an install made by an earlier version, see
 [Upgrading an existing install](#upgrading-an-existing-install).
 
+### Without the installer
+
+Each [GitHub release](../../releases) attaches packages that are exactly what
+the installer writes, so extracting one into a project root is an install:
+`generic` (`AGENTS.md` + `.agents/skills/`), `claude` (the same plus
+`.claude/skills/` pointers), and `generic-lite` (a single `AGENTS.md` for small
+local models). They hold every stack, since there is no project to detect one
+from; use the installer itself for a stack-filtered install. `--check` and
+`--upgrade` work on the extracted files as on any install.
+
 | Flag | Effect |
 |---|---|
 | `--stacks LIST` / `-Stacks` | Which stacks to install. Default: detected. |
