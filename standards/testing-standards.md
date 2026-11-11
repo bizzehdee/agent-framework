@@ -9,7 +9,7 @@ stack: any
 
 ## Coverage
 
-**90% branch coverage is a floor, not a target**, excluding EF Core migrations,
+**90% branch coverage is a floor, not a target**, excluding schema migrations,
 generated code, and composition-root wiring such as `Program.cs` or `Startup.cs`
 and its equivalents.
 
