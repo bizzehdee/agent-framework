@@ -1,6 +1,6 @@
 ---
 name: technical-writing
-description: Controlled technical writing style for prose output, in two modes - machine-to-human (documentation, READMEs, guides, explanations, commit messages, PR descriptions, tickets, chat responses of any length) and machine-to-machine (prompts, skill files, agent instructions, structured specs, schema descriptions). USE FOR writing or editing any document, comment block, release note, or instruction text. USE FOR reviewing prose for clarity. DO NOT USE FOR choosing identifier names or code comment policy - see code-quality.
+description: Controlled technical writing style for prose output, in two modes - machine-to-human (documentation, READMEs, guides, explanations, commit messages, PR descriptions, tickets, chat responses of any length) and machine-to-machine (prompts, skill files, agent instructions, structured specs, schema descriptions) - including how to write for a human reader without machine-sounding prose. USE FOR writing or editing any document, comment block, release note, or instruction text. USE FOR writing anything a human is expected to read, including a reply or report. USE FOR reviewing prose for clarity or removing AI-sounding phrasing. DO NOT USE FOR choosing identifier names or code comment policy - see code-quality.
 globs: **/*.md,**/*.mdx,**/*.rst,**/*.txt
 stack: any
 ---
@@ -41,6 +41,49 @@ Audience: a person reading documentation, an explanation, or a change descriptio
 Apply the rules above, and do not assume prior knowledge without explanation or a
 link.
 
+### Reading like a person wrote it
+
+Prose a human will read must not carry the habits that mark machine writing.
+
+State the point; do not stage it:
+
+- No opener that announces the point is coming, and no closing line that
+  restates it.
+- No "not X but Y" framing to add weight, and no aphorism in place of the
+  specific claim.
+- Do not rebut an objection the text never raised.
+- In a reply, lead with the answer or decision, and give only the reasoning the
+  reader does not already have.
+
+Plain words over inflated ones:
+
+- Replace stock machine vocabulary — delve, crucial, leverage, robust,
+  seamless, showcase, underscore, and their kin — with the plain word.
+- Prefer "is", "are", and "has" over "serves as", "boasts", and "features". No
+  sales adjectives.
+- No inflated significance: end on the concrete fact, not a claim about
+  importance, legacy, or the future.
+- Name the actual relationship instead of "linked to" or "associated with", and
+  cut a trailing "-ing" clause that asserts meaning the text has not shown.
+- Attribute authority by name, or cut it. "Experts say" is not a source.
+
+Rhythm and formatting follow the content:
+
+- A list of three is a unit of content, not a cadence. Keep three items only
+  when the content has three.
+- Prefer commas, full stops, and colons over dashes as the default connector.
+- Bold marks nothing but genuine structure. A labelled bullet list whose labels
+  add nothing is prose; write it as prose. Headings are sentence case and
+  descriptive.
+
+Leave no chat residue in a document:
+
+- No greeting, no praise of the question, no offer of further help.
+- No first sentence that restates the heading, and no description of the
+  document's own revisions, sourcing, or layout.
+- No knowledge-cutoff disclaimer, and no plausible guess presented as fact:
+  state what the sources do not show.
+
 ## Mode B: machine to machine
 
 Audience: another model or a parser. Write as if the reader is a non-native English
@@ -66,3 +109,7 @@ sentence carries one idea.
 - [ ] Modal verbs used consistently: must, should, may, can.
 - [ ] Procedures numbered in execution order, condition before action.
 - [ ] No filler, idiom, marketing language, or ambiguous pronoun.
+- [ ] No staged opener, restated-point closer, or "not X but Y" framing.
+- [ ] No stock machine vocabulary, inflated significance, or unnamed authority.
+- [ ] No decorative bold, label-only bullet list, or chat residue in a document.
+- [ ] Every reply leads with the answer or decision.
