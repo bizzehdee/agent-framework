@@ -1,14 +1,15 @@
 # Agent instruction framework
 
-Portable engineering standards for AI coding agents. One source of truth, a minimal
-footprint in the repositories you install into.
+Portable engineering standards for AI coding agents. Every rule has one source,
+and an install adds two entries to your repository.
 
 ## Quick install
 
-No clone and no installer needed. Download a package from the
+Download a package from the
 [latest release](https://github.com/bizzehdee/agent-framework/releases/latest)
-and extract it into your project's root directory. Each package is exactly what
-the installer writes, with no wrapping folder.
+and extract it into your project's root directory. You do not need to clone
+this repository or run the installer. Each package holds exactly what the
+installer writes, with no wrapping folder.
 
 | Package | Use it when | Adds |
 |---|---|---|
@@ -28,11 +29,11 @@ unzip agent-framework-*-generic.zip
 
 On Windows, extract with `Expand-Archive agent-framework-*-generic.zip .` instead.
 
-**Running a local model, or anything with a small context window?** Use the
+If you run a local model, or any model with a small context window, use the
 `generic-lite` package. The full packages rely on the model loading a standard
-on demand when its trigger matches, which small models (9–12B, or a 27B-class
-MoE with a 128k window) do not do reliably. Lite puts every rule in one
-always-on `AGENTS.md` of roughly 5k tokens, with nothing else to load.
+on demand when its trigger matches, which small models (9B to 12B, or a
+27B-class MoE with a 128k window) do not do reliably. Lite puts every rule in
+one always-on `AGENTS.md` of roughly 5k tokens, with nothing else to load.
 
 The packages hold the standards for every stack. For an install filtered to
 your project's stacks, or to update an existing install, use the
@@ -46,14 +47,16 @@ my-repo/
   .agents/skills/<name>/SKILL.md  one skill per standard, loaded on demand
 ```
 
-Two open standards, one copy of every rule. [`AGENTS.md`](https://agents.md) is read
-natively by Codex, Cursor, Copilot, Claude Code, Gemini CLI, Aider, Windsurf, Zed
-and 20+ others. [`.agents/skills/`](https://agentskills.io) is the vendor-neutral
-Agent Skills location, which Codex, Cursor, Copilot/VS Code and OpenCode load
-natively — a tool with a skill loader gets real progressive disclosure, and one
-without reads `AGENTS.md` and opens the path from its trigger table.
+The install uses two open standards and holds one copy of every rule.
+[`AGENTS.md`](https://agents.md) is read natively by Codex, Cursor, Copilot,
+Claude Code, Gemini CLI, Aider, Windsurf, Zed and 20+ others.
+[`.agents/skills/`](https://agentskills.io) is the vendor-neutral Agent Skills
+location, which Codex, Cursor, Copilot/VS Code and OpenCode load natively. A
+tool with a skill loader loads each standard on demand. A tool without one
+reads `AGENTS.md` and opens the path from its trigger table.
 
-No `.cursor/` or `.github/`, and no second copy of the prose anywhere.
+A default install adds no `.cursor/` or `.github/` directory, and no second
+copy of the prose.
 
 ## Install
 
@@ -69,7 +72,7 @@ pwsh ./install.ps1 -Target C:\code\my-project
 ```
 
 The installer detects the project's stacks and which agentic tools you have, then
-offers the optional adapters with **none** as the default. Press Enter for the clean
+offers the optional adapters. The default is none, so pressing Enter gives the
 two-entry install.
 
 To migrate an install made by an earlier version, see
@@ -94,7 +97,8 @@ hangs.
 
 ### Globally
 
-The way to apply the standards everywhere without touching any repository:
+A user-level install applies the standards to every project and adds no files
+to any repository:
 
 ```bash
 ./install.sh --user
@@ -102,32 +106,32 @@ The way to apply the standards everywhere without touching any repository:
 
 | Destination | Serves |
 |---|---|
-| `~/.agents/skills/` | Codex, Cursor, Copilot/VS Code, OpenCode — always written |
+| `~/.agents/skills/` | Codex, Cursor, Copilot/VS Code, OpenCode (always written) |
 | `~/.claude/CLAUDE.md` + `~/.claude/skills/` | Claude Code, when detected |
 | `~/.codex/AGENTS.md` | Codex, when detected |
 
 One skills tree serves every tool that reads the user-level Agent Skills location.
-A user install includes every stack, since it serves all your projects — the
+A user install includes every stack, because it serves all your projects. The
 descriptions are stack-scoped, so a .NET standard will not trigger in a Python
 project.
 
 ### Lite: small local models
 
 The standard layout assumes a model that loads a skill when its trigger
-matches. A small local model — 9–12B dense, or a 27B-class MoE, with a 128k
-window — cannot be relied on to do that, and does better with fewer, blunter
+matches. A small local model (9B to 12B dense, or a 27B-class MoE, with a 128k
+window) cannot be relied on to do that, and does better with fewer, blunter
 words. `--lite` installs one always-on file instead:
 
 ```bash
 ./install.sh /path/to/project --lite
 ```
 
-It writes a single `AGENTS.md` — the ten non-negotiables plus each standard's
-checklist as imperative rules, stack-filtered as usual — at roughly 5k tokens
-for every stack, and less once filtered. There is no skills tree and adapters
-are refused. `--check` and `--upgrade` read the mode from the stamp, so a lite
-install stays lite, and `--upgrade --lite` converts a full install, pruning the
-skills tree.
+It writes a single `AGENTS.md` holding the ten non-negotiables plus each
+standard's checklist as imperative rules, stack-filtered as usual. The file is
+roughly 5k tokens for every stack, and less once filtered. A lite install has
+no skills tree, and the installer refuses adapters with it. `--check` and
+`--upgrade` read the mode from the stamp, so a lite install stays lite.
+`--upgrade --lite` converts a full install and prunes the skills tree.
 
 ## Stack scoping
 
@@ -135,17 +139,26 @@ A standard declares `stack:` in its frontmatter. `any` installs everywhere; a na
 stack installs only into matching projects, so a Python repo never receives .NET
 rules.
 
-Detection looks for marker files up to three levels deep: `*.csproj`/`*.sln`/
-`global.json` → `dotnet`; `pyproject.toml`/`setup.py`/`requirements.txt` → `python`;
-`Cargo.toml` → `rust`; `CMakeLists.txt`/`*.vcxproj` → `c-cpp`; `package.json` →
-`node`; `go.mod` → `go`; `project.godot` → `godot`. A Godot C# project also has a
-`.csproj`, so it receives both `godot` and `dotnet`. Override with `--stacks`, or `--stacks any` for universal
-standards only.
+Detection looks for marker files up to three levels deep:
+
+| Marker files | Stack |
+|---|---|
+| `*.csproj`, `*.sln`, `global.json` | `dotnet` |
+| `pyproject.toml`, `setup.py`, `requirements.txt` | `python` |
+| `Cargo.toml` | `rust` |
+| `CMakeLists.txt`, `*.vcxproj` | `c-cpp` |
+| `package.json` | `node` |
+| `go.mod` | `go` |
+| `project.godot` | `godot` |
+
+A Godot C# project also has a `.csproj`, so it receives both `godot` and
+`dotnet`. Override detection with `--stacks`, or pass `--stacks any` for the
+universal standards only.
 
 ## Optional adapters
 
-Off unless requested. Every other tool reads `.agents/skills/` or `AGENTS.md`
-already.
+Adapters are off unless you request them. Every other tool already reads
+`.agents/skills/` or `AGENTS.md`.
 
 | Adapter | Writes | Why it exists |
 |---|---|---|
@@ -157,25 +170,25 @@ already.
 ./install.sh /path/to/project --adapters claude
 ```
 
-`claude` and `copilot` write **pointers**, never a second copy: an adapter file
-carries the frontmatter its tool needs to discover the standard, and a one-line
-body telling it to read `.agents/skills/<name>/SKILL.md`. Copilot's glob files
-cover only the standards that declare natural globs; the rest are listed by path
-in the repo-wide file.
+`claude` and `copilot` write pointers. An adapter file carries the frontmatter
+its tool needs to discover the standard, and a one-line body telling it to read
+`.agents/skills/<name>/SKILL.md`, so no adapter file repeats a standard's text.
+Copilot's glob files cover only the standards that declare natural globs; the
+rest are listed by path in the repo-wide file.
 
-`hooks` writes tooling rather than a pointer: a POSIX sh pre-commit hook that
-scans the staged diff's added lines for secrets and environment-specific values
-and blocks the commit on a hit, reporting file, line, and category — never the
-value itself. Enable it per clone:
+`hooks` writes a POSIX sh pre-commit hook. The hook scans the staged diff's
+added lines for secrets and environment-specific values and blocks the commit
+on a hit. It reports the file, line, and category of each finding, and does not
+print the value. Enable it per clone:
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-Skipping the `claude` adapter is not a loss of coverage — Claude Code then reads
+Without the `claude` adapter, Claude Code still has every standard: it reads
 `AGENTS.md` and opens the path from its table, the same as any tool without a
-loader. The adapter buys model-decided activation from the description, at the cost
-of a `.claude/` directory in the repository.
+loader. The adapter adds model-decided activation from the description, at the
+cost of a `.claude/` directory in the repository.
 
 ## Keeping installs current
 
@@ -199,16 +212,16 @@ To update, edit a file in `standards/` and re-run the installer with `--force`.
 ## Upgrading an existing install
 
 `--force` rewrites the files the current version produces. It does not know about
-files an *earlier* version produced, so an install made before a layout change ends
+files an earlier version produced, so an install made before a layout change ends
 up holding both. `--upgrade` handles the whole transition:
 
 ```bash
 ./install.sh /path/to/project --upgrade
 ```
 
-It reads the install rather than asking you about it — the adapter set from the
-directories present, the stack set from the stamp — regenerates everything at the
-current version, and then removes what is left over:
+It asks you nothing about the install. It reads the adapter set from the
+directories present and the stack set from the stamp, regenerates everything at
+the current version, and then removes what is left over:
 
 ```
 Upgrading: /path/to/project
@@ -223,26 +236,26 @@ Left over from an earlier layout, to remove:
 Remove these 37 file(s)? [y/N]
 ```
 
-Three properties make it safe to run on a repository you care about:
+The upgrade limits what it can remove:
 
-- **It only touches directories it writes** — `standards/`, `.agents/skills/`,
-  `.claude/skills/`, `.cursor/rules/`, `.github/instructions/`, and the user-scope
-  equivalents. Nothing outside them is even considered.
-- **Inside those, it only removes names that came from `standards/`.** A skill or
-  rule you wrote yourself lives in the same directory and survives untouched; it is
-  reported under *not generated by it* so you can see the decision.
-- **It asks before deleting**, and `--dry-run` prints the whole plan without
-  writing or removing anything. `--yes` skips the prompt, as does a non-interactive
-  shell, so CI does not hang.
+- It considers only the directories the installer writes: `standards/`,
+  `.agents/skills/`, `.claude/skills/`, `.cursor/rules/`, `.github/instructions/`,
+  `.githooks/`, and the user-scope equivalents.
+- Inside those directories, it removes only names that came from `standards/`.
+  A skill or rule you wrote yourself lives in the same directory and survives
+  untouched. The upgrade lists it under "not generated by it".
+- It asks before deleting. `--dry-run` prints the whole plan without writing or
+  removing anything. `--yes` skips the prompt, as does a non-interactive shell,
+  so CI does not hang.
 
-Empty directories are cleaned up afterwards, so a retired adapter's directory
-disappears — unless something of yours is still in it.
+The upgrade then removes empty directories, so a retired adapter's directory
+disappears unless it still holds something of yours.
 
 ## Requirements
 
 `install.sh` / `build.sh` need POSIX `/bin/sh` plus `awk`, `sed`, `find` (dash, bash,
 or Git Bash). `install.ps1` / `build.ps1` need PowerShell 7+. Installed projects need
-neither — the output is plain Markdown.
+neither, because the output is plain Markdown.
 
 ## The standards
 
@@ -317,9 +330,9 @@ Universal (`stack: any`):
 | `godot-scripting` | Static typing, naming and member order, Godot 4 signals, exports, C# partial classes and generated names. |
 | `godot-scene-architecture` | Call down and signal up, autoload discipline, shared resources, the frame loop, main-thread rule, freeing, multiplayer authority. |
 
-`_core.md` holds the ten non-negotiables. It is injected inline into `AGENTS.md`
-and never becomes a skill of its own — a rule that applies only once loaded is not a
-non-negotiable.
+`_core.md` holds the ten non-negotiables. The build injects it inline into
+`AGENTS.md` and never emits it as a skill, because these rules must apply before
+any skill is loaded.
 
 ## Development
 
