@@ -231,6 +231,7 @@ Universal (`stack: any`):
 | `observability-standards` | Structured logging, what to log, health checks. |
 | `performance-discipline` | Measure before optimising; defects to avoid by default. |
 | `technical-writing` | Controlled style for human- and machine-facing prose. |
+| `process-control` | Waiting on and killing processes by PID, never by a command-line pattern the matching command itself contains. |
 
 `stack: dotnet`:
 

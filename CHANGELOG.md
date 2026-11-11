@@ -8,6 +8,10 @@ what sits between them. Dates are the day the change landed on `main`.
 
 ### Added
 
+- `process-control`: wait on and kill processes by PID, never by a
+  command-line pattern the matching command itself contains, which makes a
+  `pgrep -f` loop spin forever and a `pkill -f` kill its own shell.
+
 - `--lite` on build and install: one always-on `AGENTS.md` for small-context
   local models — the core rules plus each standard's checklist as rules, ~5k
   tokens for all stacks. No skills tree, no adapters; `--check` and `--upgrade`
