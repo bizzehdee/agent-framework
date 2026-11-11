@@ -131,6 +131,9 @@ The Documents index has one row per section document:
   row says `Not applicable` and why. A section that applies but is undecided gets
   a document with `None.` under its content and the undecided items under Open
   questions.
+- A document the user has declared an immutable source of truth carries the
+  canonical marker, and its index row's Covers cell starts with `Canonical:`
+  ([[canonical-documents]]).
 - When `docs/` already holds a document covering a section, the index links to
   that document. Do not create a second copy. When a section document's name is
   taken by an unrelated document, ask the user what to name it.

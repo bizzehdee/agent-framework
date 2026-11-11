@@ -44,6 +44,11 @@ These apply always. Do not wait to load a standard before honouring them.
 7. **Diagnose by elimination, never by fix-first.** Do not change code to see what
    happens. Change code only to test a named candidate, and name it first.
    Detail: `elimination-debugging`.
-8. **Report outcomes faithfully.** If a step was skipped, say so. If a result is
+8. **A canonical document is binding and locked.** A document whose heading is
+   followed by a `> **Canonical.**` marker is the immutable source of truth for
+   the scope it names. Read it before working inside that scope and conform to it
+   exactly; a deviation is a defect. Never edit one without the double sign-off
+   procedure, and never as a side effect. Detail: `canonical-documents`.
+9. **Report outcomes faithfully.** If a step was skipped, say so. If a result is
    unverified, label it unverified. Do not describe intended behaviour as
    observed behaviour.
