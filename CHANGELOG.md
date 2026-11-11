@@ -36,9 +36,11 @@ what sits between them. Dates are the day the change landed on `main`.
 
 ### Changed
 
-- Windows builds and installs run ~3x faster: frontmatter and triggers are
-  parsed in one awk pass instead of one process per lookup, per-file pipelines
-  are single processes, and stack detection is one `find` instead of seventeen.
+- Windows builds and installs run an order of magnitude faster (build 58s to
+  2s, install 44s to 6s; the full suite 15+ min to 6 min): one awk pass parses
+  all frontmatter and triggers, one awk writes every generated file, one awk
+  performs the whole copy and check, stack detection is one `find` instead of
+  seventeen, and the leftover walk is one `find` with in-shell set matching.
   Output is byte-identical.
 
 - Core rule 2 split in two: repository conventions and learnings, and the

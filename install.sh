@@ -508,54 +508,89 @@ else
 fi
 
 # --- Copy -----------------------------------------------------------------
-# POSIX sh has no function-local variables. These names are prefixed so the
-# function cannot clobber the caller's loop variables while walking a directory.
+# One awk process handles every file - the existence probe, the check-mode
+# comparison, and the write itself - because a cp or cmp per file is a process
+# per file, which Windows makes expensive. Generated files are LF text, so awk
+# reads and writes them byte-faithfully. The awk reports one tagged line per
+# file, and the shell loop turns the tags into the counts and the display
+# lines, exactly as the per-file version printed them.
 
-copy_one() {
-    cp_src="$1"; cp_dest="$2"; cp_rel="$3"
-    # Recorded before any early return, so the list is complete in every mode.
-    # Destination-relative, because that is the one spelling of a path both this
-    # function and the leftover walk can derive without normalising anything.
-    echo "$cp_rel" >> "$COUNT_DIR/expected"
-    if [ "$CHECK" -eq 1 ]; then
-        if [ ! -e "$cp_dest" ]; then
-            echo "  missing  $cp_dest"; echo x >> "$COUNT_DIR/missing"
-        elif ! cmp -s "$cp_src" "$cp_dest"; then
-            echo "  differs  $cp_dest"; echo x >> "$COUNT_DIR/differs"
+emit_triplets() {
+    echo "$MAPPINGS" | while IFS='	' read -r map_root map_from map_to; do
+        [ -n "$map_from" ] || continue
+        map_src="$map_root/$map_from"
+        [ -e "$map_src" ] || continue
+        if [ -d "$map_src" ]; then
+            ( cd "$map_src" && find . -type f -print ) | sed 's|^\./||' | while IFS= read -r rel; do
+                printf '%s\t%s\t%s\n' "$map_src/$rel" "$DESTINATION/$map_to/$rel" "$map_to/$rel"
+            done
         else
-            echo x >> "$COUNT_DIR/same"
+            printf '%s\t%s\t%s\n' "$map_src" "$DESTINATION/$map_to" "$map_to"
         fi
-        return
-    fi
-    if [ -e "$cp_dest" ] && [ "$FORCE" -eq 0 ]; then
-        echo "  skip (exists) $cp_dest"
-        echo x >> "$COUNT_DIR/skipped"
-        return
-    fi
-    if [ "$DRY_RUN" -eq 1 ]; then
-        echo "  would write   $cp_dest"
-        echo x >> "$COUNT_DIR/written"
-        return
-    fi
-    cp_dir=${cp_dest%/*}
-    [ -d "$cp_dir" ] || mkdir -p "$cp_dir"
-    cp -f "$cp_src" "$cp_dest"
-    echo "  + $cp_dest"
-    echo x >> "$COUNT_DIR/written"
+    done
 }
 
-echo "$MAPPINGS" | while IFS='	' read -r map_root map_from map_to; do
-    [ -n "$map_from" ] || continue
-    map_src="$map_root/$map_from"
-    [ -e "$map_src" ] || continue
-    if [ -d "$map_src" ]; then
-        ( cd "$map_src" && find . -type f -print ) | sed 's|^\./||' | while IFS= read -r rel; do
-            copy_one "$map_src/$rel" "$DESTINATION/$map_to/$rel" "$map_to/$rel"
-        done
-    else
-        copy_one "$map_src" "$DESTINATION/$map_to" "$map_to"
-    fi
+TRIPLETS=$(emit_triplets)
+
+# Writing modes create every destination directory in one mkdir. "$@" is the
+# only POSIX array, and it preserves a path holding spaces.
+if [ "$CHECK" -eq 0 ] && [ "$DRY_RUN" -eq 0 ] && [ -n "$TRIPLETS" ]; then
+    set --
+    while IFS='	' read -r t_src t_dest t_rel; do
+        [ -n "$t_dest" ] || continue
+        set -- "$@" "${t_dest%/*}"
+    done <<TRIPEOF
+$TRIPLETS
+TRIPEOF
+    [ $# -eq 0 ] || mkdir -p "$@"
+fi
+
+printf '%s\n' "$TRIPLETS" | awk -F'\t' \
+    -v check="$CHECK" -v force="$FORCE" -v dry="$DRY_RUN" '
+    NF < 3 { next }
+    {
+        src = $1; dest = $2; rel = $3
+        # Recorded before anything else, so the expected list is complete in
+        # every mode. Destination-relative, the one spelling of a path this
+        # pass and the leftover walk can both derive without normalising.
+        print "E\t" rel
+
+        probe = (getline probeline < dest)
+        if (probe >= 0) close(dest)
+        exists = (probe >= 0)
+
+        if (check) {
+            if (!exists) { print "M\t" dest; next }
+            sa = ""; while ((getline l < src) > 0) sa = sa l "\n"
+            close(src)
+            da = ""; while ((getline l < dest) > 0) da = da l "\n"
+            close(dest)
+            if (sa != da) print "D\t" dest; else print "=\t" dest
+            next
+        }
+        if (exists && !force) { print "S\t" dest; next }
+        if (dry) { print "W\t" dest; next }
+        while ((getline l < src) > 0) print l > dest
+        close(src); close(dest)
+        print "+\t" dest
+    }
+' | while IFS='	' read -r cp_tag cp_info; do
+    case "$cp_tag" in
+        E)   printf '%s\n' "$cp_info" >> "$COUNT_DIR/expected" ;;
+        M)   echo "  missing  $cp_info"; echo x >> "$COUNT_DIR/missing" ;;
+        D)   echo "  differs  $cp_info"; echo x >> "$COUNT_DIR/differs" ;;
+        =)   echo x >> "$COUNT_DIR/same" ;;
+        S)   echo "  skip (exists) $cp_info"; echo x >> "$COUNT_DIR/skipped" ;;
+        W)   echo "  would write   $cp_info"; echo x >> "$COUNT_DIR/written" ;;
+        +)   echo "  + $cp_info"; echo x >> "$COUNT_DIR/written" ;;
+    esac
 done
+
+# awk writes plain files, so the hook's execute bit is restored here; cp used
+# to carry it over from the staging tree.
+if [ "$CHECK" -eq 0 ] && [ "$DRY_RUN" -eq 0 ] && [ -f "$DESTINATION/.githooks/pre-commit" ]; then
+    chmod +x "$DESTINATION/.githooks/pre-commit" 2>/dev/null || true
+fi
 
 if [ "$CHECK" -eq 1 ]; then
     MISSING=$(wc -l < "$COUNT_DIR/missing" | tr -d ' ')
@@ -601,40 +636,53 @@ MANAGED_DIRS="standards .agents/skills .claude/skills .claude/standards
 
 # Every source standard, including _core and those excluded by stack, so a file
 # left behind by a stack change is still recognised as ours rather than yours.
-SOURCE_NAMES=$(for sn in "$REPO_ROOT"/standards/*.md; do basename "$sn" .md; done)
+NAMES_SET="|"
+for sn in "$REPO_ROOT"/standards/*.md; do
+    sn_b=${sn##*/}
+    NAMES_SET="$NAMES_SET${sn_b%.md}|"
+done
 
 # Collected through files rather than variables: the walk reads find's output on a
 # pipe, so a subshell's assignments would not survive it, and a path holding a
 # space must not be split into two.
-printf '%s\n' "$SOURCE_NAMES" > "$COUNT_DIR/names"
 : > "$COUNT_DIR/stale"
 : > "$COUNT_DIR/foreign"
 
-# The expected list as one |-delimited string, checked with a case match: a
-# grep per walked file was a process per file, which Windows made expensive.
+# The expected list and the source names as |-delimited strings checked with a
+# case match, and one find across every managed directory: a grep or a find per
+# item was a process per item, which Windows made expensive.
 EXPECTED_SET="|$(tr '\n' '|' < "$COUNT_DIR/expected")"
 
+set --
 for md in $MANAGED_DIRS; do
-    [ -d "$DESTINATION/$md" ] || continue
-    ( cd "$DESTINATION/$md" && find . -type f -print ) | sed 's|^\./||' |
-    while IFS= read -r rel; do
-        case "$EXPECTED_SET" in *"|$md/$rel|"*) continue ;; esac
+    [ -d "$DESTINATION/$md" ] && set -- "$@" "$DESTINATION/$md"
+done
+if [ $# -gt 0 ]; then
+    find "$@" -type f -print | while IFS= read -r lo_path; do
+        lo_mdrel=${lo_path#"$DESTINATION"/}
+        case "$EXPECTED_SET" in *"|$lo_mdrel|"*) continue ;; esac
+        lo_rel=$lo_mdrel
+        for md in $MANAGED_DIRS; do
+            case "$lo_mdrel" in "$md"/*) lo_rel=${lo_mdrel#"$md"/}; break ;; esac
+        done
         # The standard's name is the directory for a skill, the basename otherwise.
-        case "$rel" in
+        case "$lo_rel" in
             */*/*)             lo_name="" ;;
-            */SKILL.md)        lo_name=${rel%/SKILL.md} ;;
+            */SKILL.md)        lo_name=${lo_rel%/SKILL.md} ;;
             */*)               lo_name="" ;;
-            *.instructions.md) lo_name=${rel%.instructions.md} ;;
-            *.*)               lo_name=${rel%.*} ;;
+            *.instructions.md) lo_name=${lo_rel%.instructions.md} ;;
+            *.*)               lo_name=${lo_rel%.*} ;;
             *)                 lo_name="" ;;
         esac
-        if [ -n "$lo_name" ] && grep -Fxq "$lo_name" "$COUNT_DIR/names"; then
-            printf '%s\n' "$md/$rel" >> "$COUNT_DIR/stale"
+        lo_known=0
+        case "$NAMES_SET" in *"|$lo_name|"*) lo_known=1 ;; esac
+        if [ -n "$lo_name" ] && [ "$lo_known" -eq 1 ]; then
+            printf '%s\n' "$lo_mdrel" >> "$COUNT_DIR/stale"
         else
-            printf '%s\n' "$md/$rel" >> "$COUNT_DIR/foreign"
+            printf '%s\n' "$lo_mdrel" >> "$COUNT_DIR/foreign"
         fi
     done
-done
+fi
 
 STALE_COUNT=$(wc -l < "$COUNT_DIR/stale" | tr -d ' ')
 

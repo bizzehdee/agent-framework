@@ -174,21 +174,6 @@ frontmatter_value() {
     eval "printf '%s\n' \"\${FM_${2}_${MANGLED}:-}\""
 }
 
-standard_body() {
-    # Everything after the closing frontmatter delimiter, blank edges trimmed.
-    # One awk pass: the three stages (skip frontmatter, trim lead, trim tail)
-    # were separate processes once, which Windows made expensive.
-    awk '
-        NR == 1 { next }
-        !seen && /^---[[:space:]]*$/ { seen = 1; next }
-        !seen { next }
-        !started && !NF { next }
-        { started = 1; lines[++n] = $0 }
-        END { last = 0; for (i = 1; i <= n; i++) if (lines[i] ~ /[^[:space:]]/) last = i
-              for (i = 1; i <= last; i++) print lines[i] }
-    ' "$1"
-}
-
 validate_standard() {
     vs_file="$1"
     vs_base=${vs_file##*/}; vs_base=${vs_base%.md}
@@ -244,7 +229,6 @@ STANDARDS_VERSION=$(standards_version)
 CORE_FILE="$STANDARDS_DIR/_core.md"
 [ -f "$CORE_FILE" ] || { echo "Missing $CORE_FILE" >&2; exit 1; }
 validate_standard "$CORE_FILE"
-CORE_BODY=$(standard_body "$CORE_FILE")
 
 STANDARD_NAMES=$(
     for f in "$STANDARDS_DIR"/*.md; do
@@ -305,42 +289,20 @@ printf 'Source: %s standards + core\n' "$COUNT"
 printf 'Output: %s\n' "$OUTPUT_ROOT"
 [ -z "$EXCLUDED" ] || printf 'Excluded by stack: %s\n' "$(echo "$EXCLUDED" | sed 's/^, //')"
 
-# --- Helpers --------------------------------------------------------------
-
-write_generated() {
-    wg_rel="$1"
-    wg_full="$OUTPUT_ROOT/$wg_rel"
-    wg_dir=${wg_full%/*}
-    [ -d "$wg_dir" ] || mkdir -p "$wg_dir"
-    # Strip CR, drop trailing blank lines, guarantee exactly one final newline,
-    # so output matches build.ps1 byte for byte on every platform. One awk, not
-    # tr piped into awk: one process per written file instead of two.
-    awk '
-        { gsub(/\r/, ""); lines[NR] = $0 }
-        END { last = 0; for (i = 1; i <= NR; i++) if (lines[i] ~ /[^[:space:]]/) last = i
-              for (i = 1; i <= last; i++) print lines[i] }
-    ' > "$wg_full"
-    printf '  + %s\n' "$wg_rel"
-}
-
-get_trigger() {
-    # One-line trigger derived from the description's USE FOR clauses, so the
-    # table and the frontmatter can never disagree. Computed in load_frontmatter;
-    # the "DO NOT USE FOR" clause is dropped before "USE FOR" is matched there,
-    # because the former contains the latter.
-    mangle "$1"
-    eval "printf '%s\n' \"\${FM_trigger_$MANGLED:-}\""
-}
-
-# The checklist as rules: each "- [ ] item" line becomes "- item". The lite
-# build inlines these as a standard's whole content. Mirrors Get-Checklist.
-get_checklist() {
-    awk '
-        /^## Checklist/      { in_cl = 1; next }
-        in_cl && /^## /      { exit }
-        in_cl && /^- \[ \] / { print "- " substr($0, 7) }
-    ' "$STANDARDS_DIR/$1.md"
-}
+# --- Emission -------------------------------------------------------------
+# Every generated file is written by one awk process fed a control stream, and
+# every output directory is created by one mkdir: anything per-file would be a
+# process per file, which Windows makes expensive. The stream's directives:
+#
+#   ===FILE=== <relative path>    start the next output file
+#   ===BODY=== <source .md>       inline a standard's body: frontmatter
+#                                 skipped, blank edges trimmed
+#   ===CHECKLIST=== <source .md>  inline a standard's checklist, each
+#                                 "- [ ] item" emitted as "- item"
+#
+# Everything else is literal content. Per file, the writer strips CR, drops
+# trailing blank lines, and guarantees exactly one final newline, so output
+# matches build.ps1 byte for byte on every platform.
 
 # The mode is stamped so --check and --upgrade regenerate what was installed
 # rather than comparing a lite install against a full build.
@@ -350,6 +312,30 @@ MODE_STAMP=""
 GENERATED_NOTICE="<!-- GENERATED FILE. Do not edit.
      Source: standards/*.md in the agent-framework repository.
      Standards version: $STANDARDS_VERSION | stacks: $STACKS_STAMP$MODE_STAMP -->"
+
+# Every output directory, one mkdir. "$@" is the only POSIX array, and it
+# preserves a path holding spaces.
+set --
+if [ "$LITE" -eq 0 ]; then
+    for n in $STANDARD_NAMES; do set -- "$@" "$OUTPUT_ROOT/.agents/skills/$n"; done
+fi
+if has_adapter claude; then
+    for n in $STANDARD_NAMES; do set -- "$@" "$OUTPUT_ROOT/.claude/skills/$n"; done
+fi
+if has_adapter copilot; then
+    set -- "$@" "$OUTPUT_ROOT/.github"
+    for n in $STANDARD_NAMES; do
+        mangle "$n"
+        eval "cg=\${FM_globs_$MANGLED:-}"
+        # The instructions directory exists only when a glob file will land in
+        # it, or build.ps1, which creates directories per file, would disagree.
+        if [ -n "$cg" ]; then set -- "$@" "$OUTPUT_ROOT/.github/instructions"; break; fi
+    done
+fi
+if has_adapter hooks; then set -- "$@" "$OUTPUT_ROOT/.githooks"; fi
+[ $# -eq 0 ] || mkdir -p "$@"
+
+emit_stream() {
 
 # --- .agents/skills/ ------------------------------------------------------
 # The canonical copy, and the only one. Agent Skills is an open format, so a
@@ -365,11 +351,10 @@ if [ "$LITE" -eq 0 ]; then
     for n in $STANDARD_NAMES; do
         mangle "$n"
         eval "sk_desc=\${FM_description_$MANGLED:-}"
-        {
-            printf -- '---\nname: %s\ndescription: %s\n---\n\n' "$n" "$sk_desc"
-            printf '%s\n\n' "$GENERATED_NOTICE"
-            standard_body "$STANDARDS_DIR/$n.md"
-        } | write_generated ".agents/skills/$n/SKILL.md"
+        printf '===FILE=== .agents/skills/%s/SKILL.md\n' "$n"
+        printf -- '---\nname: %s\ndescription: %s\n---\n\n' "$n" "$sk_desc"
+        printf '%s\n\n' "$GENERATED_NOTICE"
+        printf '===BODY=== %s\n' "$STANDARDS_DIR/$n.md"
     done
 fi
 
@@ -379,18 +364,21 @@ fi
 # table, because a small model cannot be relied on to go and load a file.
 
 if [ "$LITE" -eq 1 ]; then
-{
+    printf '===FILE=== AGENTS.md\n'
     printf '# Agent instructions\n\n%s\n\n' "$GENERATED_NOTICE"
     cat <<'EOF'
 This is the lite build. Every rule is in this one file; there is nothing else
 to load. Follow the non-negotiables always. Each standard below binds whenever
 its "When" line matches the work you are doing.
 EOF
-    printf '\n%s\n\n' "$CORE_BODY"
-    printf '## Standards\n'
+    printf '\n'
+    printf '===BODY=== %s\n' "$CORE_FILE"
+    printf '\n## Standards\n'
     for n in $STANDARD_NAMES; do
-        printf '\n### %s\n\nWhen: %s.\n\n' "$n" "$(get_trigger "$n")"
-        get_checklist "$n"
+        mangle "$n"
+        eval "lt_trigger=\${FM_trigger_$MANGLED:-}"
+        printf '\n### %s\n\nWhen: %s.\n\n' "$n" "$lt_trigger"
+        printf '===CHECKLIST=== %s\n' "$STANDARDS_DIR/$n.md"
     done
     cat <<'EOF'
 
@@ -408,7 +396,6 @@ The single exception is security. Rule 1 of the non-negotiables outranks a
 repository or language convention that is insecure. Raise it rather than
 following it.
 EOF
-} | write_generated 'AGENTS.md'
 else
 
 # --- AGENTS.md ------------------------------------------------------------
@@ -416,7 +403,7 @@ else
 # Claude Code, Gemini CLI, Aider, Windsurf, Zed, Jules and others. Always
 # emitted, and on its own it is a complete installation.
 
-{
+    printf '===FILE=== AGENTS.md\n'
     printf '# Agent instructions\n\n%s\n\n' "$GENERATED_NOTICE"
     cat <<'EOF'
 This file holds only the rules that apply to every turn. Detailed standards are
@@ -430,7 +417,7 @@ not after.
    before acting on the work it governs.
 
 EOF
-    printf '%s\n\n' "$CORE_BODY"
+    printf '===BODY=== %s\n\n' "$CORE_FILE"
     cat <<'EOF'
 ## Standards
 
@@ -440,7 +427,9 @@ Load by trigger. When two or more triggers match, load all of them.
 |---|---|---|
 EOF
     for n in $STANDARD_NAMES; do
-        printf '| `%s` | %s | `%s/%s/SKILL.md` |\n' "$n" "$(get_trigger "$n")" "$SKILLS_PATH" "$n"
+        mangle "$n"
+        eval "ag_trigger=\${FM_trigger_$MANGLED:-}"
+        printf '| `%s` | %s | `%s/%s/SKILL.md` |\n' "$n" "$ag_trigger" "$SKILLS_PATH" "$n"
     done
     cat <<'EOF'
 
@@ -464,7 +453,6 @@ The single exception is security. Rule 1 of the non-negotiables outranks a
 repository or language convention that is insecure. Raise it rather than
 following it.
 EOF
-} | write_generated 'AGENTS.md'
 
 fi
 
@@ -481,13 +469,12 @@ if has_adapter claude; then
     for n in $STANDARD_NAMES; do
         mangle "$n"
         eval "cl_desc=\${FM_description_$MANGLED:-}"
-        {
-            printf -- '---\nname: %s\ndescription: %s\n---\n\n' "$n" "$cl_desc"
-            printf '%s\n\n' "$GENERATED_NOTICE"
-            printf 'Read `%s/%s/SKILL.md` in full before starting this work, then\n' \
-                "$SKILLS_PATH" "$n"
-            printf 'follow it. That file is the standard; this one only points at it.\n'
-        } | write_generated ".claude/skills/$n/SKILL.md"
+        printf '===FILE=== .claude/skills/%s/SKILL.md\n' "$n"
+        printf -- '---\nname: %s\ndescription: %s\n---\n\n' "$n" "$cl_desc"
+        printf '%s\n\n' "$GENERATED_NOTICE"
+        printf 'Read `%s/%s/SKILL.md` in full before starting this work, then\n' \
+            "$SKILLS_PATH" "$n"
+        printf 'follow it. That file is the standard; this one only points at it.\n'
     done
 fi
 
@@ -495,10 +482,10 @@ fi
 # or glob-attached via applyTo. Only standards with globs become auto-attached
 # files; the rest are referenced by path from the repository-wide file.
 if has_adapter copilot; then
-    {
-        printf '# Copilot instructions\n\n%s\n\n' "$GENERATED_NOTICE"
-        printf '%s\n\n' "$CORE_BODY"
-        cat <<'EOF'
+    printf '===FILE=== .github/copilot-instructions.md\n'
+    printf '# Copilot instructions\n\n%s\n\n' "$GENERATED_NOTICE"
+    printf '===BODY=== %s\n\n' "$CORE_FILE"
+    cat <<'EOF'
 ## Standards
 
 Read the matching file before starting the work it governs. When two or more
@@ -507,21 +494,21 @@ triggers match, read all of them.
 | Path | Read when |
 |---|---|
 EOF
-        for n in $STANDARD_NAMES; do
-            printf '| `%s/%s/SKILL.md` | %s |\n' "$SKILLS_PATH" "$n" "$(get_trigger "$n")"
-        done
-    } | write_generated '.github/copilot-instructions.md'
+    for n in $STANDARD_NAMES; do
+        mangle "$n"
+        eval "co_trigger=\${FM_trigger_$MANGLED:-}"
+        printf '| `%s/%s/SKILL.md` | %s |\n' "$SKILLS_PATH" "$n" "$co_trigger"
+    done
 
     for n in $STANDARD_NAMES; do
         mangle "$n"
         eval "globs=\${FM_globs_$MANGLED:-}"
         [ -n "$globs" ] || continue
-        {
-            printf -- "---\napplyTo: '%s'\n---\n%s\n\n" "$globs" "$GENERATED_NOTICE"
-            printf 'Read `%s/%s/SKILL.md` in full before editing these files, then\n' \
-                "$SKILLS_PATH" "$n"
-            printf 'follow it. That file is the standard; this one only points at it.\n'
-        } | write_generated ".github/instructions/$n.instructions.md"
+        printf '===FILE=== .github/instructions/%s.instructions.md\n' "$n"
+        printf -- "---\napplyTo: '%s'\n---\n%s\n\n" "$globs" "$GENERATED_NOTICE"
+        printf 'Read `%s/%s/SKILL.md` in full before editing these files, then\n' \
+            "$SKILLS_PATH" "$n"
+        printf 'follow it. That file is the standard; this one only points at it.\n'
     done
 fi
 
@@ -530,12 +517,12 @@ fi
 # same gate an agent applies. Enabled per clone with:
 #   git config core.hooksPath .githooks
 if has_adapter hooks; then
-    {
-        printf '#!/bin/sh\n'
-        printf '# GENERATED FILE. Do not edit.\n'
-        printf '# Source: standards/no-hardcodes.md in the agent-framework repository.\n'
-        printf '# Standards version: %s | stacks: %s\n' "$STANDARDS_VERSION" "$STACKS_STAMP"
-        cat <<'HOOK'
+    printf '===FILE=== .githooks/pre-commit\n'
+    printf '#!/bin/sh\n'
+    printf '# GENERATED FILE. Do not edit.\n'
+    printf '# Source: standards/no-hardcodes.md in the agent-framework repository.\n'
+    printf '# Standards version: %s | stacks: %s\n' "$STANDARDS_VERSION" "$STACKS_STAMP"
+    cat <<'HOOK'
 #
 # Pre-commit gate from the no-hardcodes standard: scans the staged diff's
 # added lines for secrets and environment-specific values, and blocks the
@@ -585,7 +572,55 @@ if [ -n "$findings" ]; then
 fi
 exit 0
 HOOK
-    } | write_generated '.githooks/pre-commit'
+fi
+
+}
+
+# The writer: one awk for every file. It buffers each file's lines, resolves
+# the body and checklist directives by reading the source standard itself, and
+# flushes with the trailing-blank trim and final newline on the next file
+# marker or at the end.
+emit_stream | awk -v root="$OUTPUT_ROOT" '
+    function flush(   i, last) {
+        if (cur == "") return
+        last = 0
+        for (i = 1; i <= n; i++) if (lines[i] ~ /[^[:space:]]/) last = i
+        for (i = 1; i <= last; i++) print lines[i] > cur
+        close(cur)
+        printf "  + %s\n", rel
+    }
+    /^===FILE=== / { flush(); rel = substr($0, 12); cur = root "/" rel; n = 0; next }
+    /^===BODY=== / {
+        src = substr($0, 12)
+        fnr = 0; fm = 0; started = 0; bstart = n
+        while ((getline l < src) > 0) {
+            fnr++; gsub(/\r/, "", l)
+            if (fnr == 1) continue
+            if (!fm) { if (l ~ /^---[[:space:]]*$/) fm = 1; continue }
+            if (!started && l !~ /[^[:space:]]/) continue
+            started = 1; lines[++n] = l
+        }
+        close(src)
+        while (n > bstart && lines[n] !~ /[^[:space:]]/) n--
+        next
+    }
+    /^===CHECKLIST=== / {
+        src = substr($0, 17)
+        incl = 0
+        while ((getline l < src) > 0) {
+            gsub(/\r/, "", l)
+            if (l ~ /^## Checklist/) { incl = 1; continue }
+            if (incl && l ~ /^## /) break
+            if (incl && index(l, "- [ ] ") == 1) lines[++n] = "- " substr(l, 7)
+        }
+        close(src)
+        next
+    }
+    { gsub(/\r/, ""); lines[++n] = $0 }
+    END { flush() }
+'
+
+if has_adapter hooks; then
     chmod +x "$OUTPUT_ROOT/.githooks/pre-commit" 2>/dev/null || true
 fi
 
