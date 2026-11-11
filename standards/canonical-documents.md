@@ -56,6 +56,12 @@ Before producing any work, check `plan.md`'s index for a `Canonical:` row whose
 scope covers the task. If one does, read that document before the first change,
 and state that you did.
 
+The marker alone binds. A `> **Canonical.**` marker found by any route — the
+index, a glob, a link, or opening the document directly — is in force from the
+moment you read it, including in a project with no `plan.md` or an index that
+does not list the document. When the index row is missing, propose adding it
+([[project-planning]]); never treat its absence as a reason to deviate.
+
 - Take every value, rule, and structure the work needs from the document. A
   colour not in the palette, a layout the design guide does not allow, a
   mechanic that contradicts the core loop — each is a defect, the same severity
