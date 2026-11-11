@@ -40,6 +40,10 @@
     Bring an existing install to the current layout: infer what was installed,
     regenerate it, and remove what earlier versions left behind. Implies -Force.
 
+.PARAMETER Lite
+    Install a single AGENTS.md for small-context local models: core rules plus
+    each standard's checklist, inline. No skills tree, no adapters.
+
 .PARAMETER Yes
     Accept the defaults without prompting.
 
@@ -79,6 +83,7 @@ param(
 
     [switch]$Check,
     [switch]$Upgrade,
+    [switch]$Lite,
 
     [Alias('y')]
     [switch]$Yes,
@@ -89,6 +94,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+$liteExplicit = $PSBoundParameters.ContainsKey('Lite')
 
 $RepoRoot = $PSScriptRoot
 $BuildScript = Join-Path $RepoRoot 'build.ps1'
@@ -114,6 +121,11 @@ if ($adaptersExplicit) {
 }
 else {
     $Adapters = @('none')
+}
+
+if ($Lite -and $adaptersExplicit -and ($Adapters -join ',') -ne 'none') {
+    [Console]::Error.WriteLine('-Lite installs a single AGENTS.md; adapters do not apply.')
+    exit 2
 }
 
 $homeDir = if ($env:HOME) { $env:HOME } else { $env:USERPROFILE }
@@ -306,6 +318,15 @@ if ($inspect) {
         exit 2
     }
 
+    # A lite install is regenerated as lite, or the comparison would be against
+    # a full build that never matches.
+    if (-not $liteExplicit) {
+        $agentsFile = Join-Path $destination 'AGENTS.md'
+        if ((Test-Path $agentsFile) -and (Select-String -Path $agentsFile -Pattern 'mode: lite' -Quiet)) {
+            $Lite = [switch]$true
+        }
+    }
+
     # Infer the adapter set from what is actually present, so the comparison
     # covers exactly what was installed rather than today's defaults.
     if (-not $adaptersExplicit) {
@@ -397,7 +418,10 @@ else {
     Write-Host 'other tool reads AGENTS.md, so no tool-specific files are required.'
     Write-Host ''
 
-    if (-not $adaptersExplicit) {
+    if ($Lite) {
+        $Adapters = @('none')
+    }
+    elseif (-not $adaptersExplicit) {
         Write-Host "Optional adapters add a tool-specific directory. None copies a standard's"
         Write-Host 'text:'
         Write-Host ''
@@ -452,6 +476,9 @@ else {
     if ($User) {
         Write-Host "Tools: $($selectedTools -join ', ')"
     }
+    elseif ($Lite) {
+        Write-Host 'Contents: a single AGENTS.md (lite)'
+    }
     elseif ($adapterList -in '', 'none') {
         Write-Host 'Contents: AGENTS.md + .agents/skills/ only'
     }
@@ -480,7 +507,7 @@ try {
     # and every generated reference has to say so.
     $skillsPath = if ($User) { '~/.agents/skills' } else { '.agents/skills' }
     & $BuildScript -OutputRoot $staging -Adapters $effectiveAdapters -Stacks $stackList `
-        -SkillsPath $skillsPath 6>$null
+        -SkillsPath $skillsPath -Lite:$Lite 6>$null
 
     # Map staged relative paths onto destination relative paths.
     # Project installs are a straight copy. User installs relocate into the

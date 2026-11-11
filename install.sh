@@ -23,6 +23,9 @@
 #                    (default: none). Passing this skips the prompt.
 #   --stacks LIST    Which stacks to install: all, any, dotnet, python, rust, c-cpp,
 #                    node, go. Default: detected from the target project.
+#   --lite           Install a single AGENTS.md for small-context local models:
+#                    core rules plus each standard's checklist, inline. No
+#                    skills tree, no adapters.
 #   --check          Report whether an existing install matches the current
 #                    standards. Writes nothing. Exit 1 if it is out of date.
 #   --upgrade        Bring an existing install to the current layout: infer what
@@ -58,6 +61,8 @@ UPGRADE=0
 ASSUME_YES=0
 FORCE=0
 DRY_RUN=0
+LITE=0
+LITE_EXPLICIT=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -68,10 +73,11 @@ while [ $# -gt 0 ]; do
                   STACKS="$1"; STACKS_EXPLICIT=1 ;;
         --check) CHECK=1 ;;
         --upgrade) UPGRADE=1 ;;
+        --lite) LITE=1; LITE_EXPLICIT=1 ;;
         -y|--yes) ASSUME_YES=1 ;;
         --force) FORCE=1 ;;
         --dry-run) DRY_RUN=1 ;;
-        -h|--help) sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) echo "Unknown option: $1" >&2; exit 2 ;;
         *) [ -z "$TARGET" ] || { echo "Unexpected argument: $1" >&2; exit 2; }; TARGET="$1" ;;
     esac
@@ -86,6 +92,9 @@ if [ "$USER_SCOPE" -eq 0 ] && [ -z "$TARGET" ]; then
 fi
 if [ "$CHECK" -eq 1 ] && [ "$UPGRADE" -eq 1 ]; then
     echo "--check reports and --upgrade rewrites. Choose one." >&2; exit 2
+fi
+if [ "$LITE" -eq 1 ] && [ "$ADAPTERS_EXPLICIT" -eq 1 ] && [ "$ADAPTERS" != "none" ]; then
+    echo "--lite installs a single AGENTS.md; adapters do not apply." >&2; exit 2
 fi
 # An upgrade replaces the files it manages by definition, so asking again for
 # --force would only be a way to get it half done.
@@ -278,6 +287,12 @@ if [ "$INSPECT" -eq 1 ]; then
         echo "Install first: ./install.sh $([ "$USER_SCOPE" -eq 1 ] && echo '--user' || echo "$TARGET")" >&2
         exit 2; }
 
+    # A lite install is regenerated as lite, or the comparison would be against
+    # a full build that never matches.
+    if [ "$LITE_EXPLICIT" -eq 0 ]; then
+        grep -q 'mode: lite' "$DESTINATION/AGENTS.md" 2>/dev/null && LITE=1
+    fi
+
     # Infer the adapter set from what is actually present, so the comparison
     # covers exactly what was installed rather than today's defaults.
     if [ "$ADAPTERS_EXPLICIT" -eq 0 ]; then
@@ -359,7 +374,9 @@ else
     echo "other tool reads AGENTS.md, so no tool-specific files are required."
     echo ""
 
-    if [ "$ADAPTERS_EXPLICIT" -eq 0 ]; then
+    if [ "$LITE" -eq 1 ]; then
+        ADAPTERS="none"
+    elif [ "$ADAPTERS_EXPLICIT" -eq 0 ]; then
         echo "Optional adapters add a tool-specific directory. None copies a standard's"
         echo "text:"
         echo ""
@@ -411,6 +428,8 @@ if [ "$INSPECT" -eq 0 ]; then
     echo "Installing to: $LABEL"
     if [ "$USER_SCOPE" -eq 1 ]; then
         printf 'Tools: %s\n' "$(echo "$SELECTED_TOOLS" | tr -s ' ' | sed 's/ /, /g')"
+    elif [ "$LITE" -eq 1 ]; then
+        echo "Contents: a single AGENTS.md (lite)"
     elif [ -z "$ADAPTER_LIST" ] || [ "$ADAPTER_LIST" = "none" ]; then
         echo "Contents: AGENTS.md + .agents/skills/ only"
     else
@@ -444,8 +463,13 @@ trap 'rm -rf "$STAGING" "$COUNT_DIR"' EXIT INT TERM
 # every generated reference has to say so.
 if [ "$USER_SCOPE" -eq 1 ]; then SKILLS_PATH="~/.agents/skills"; else SKILLS_PATH=".agents/skills"; fi
 
+LITE_FLAG=""
+[ "$LITE" -eq 0 ] || LITE_FLAG="--lite"
+
+# $LITE_FLAG is unquoted deliberately: when empty it must vanish, not become an
+# empty argument.
 sh "$BUILD_SCRIPT" --out "$STAGING" --adapters "${ADAPTER_LIST:-none}" --stacks "$STACKS" \
-    --skills-path "$SKILLS_PATH" >/dev/null
+    --skills-path "$SKILLS_PATH" $LITE_FLAG >/dev/null
 
 # MAPPINGS holds "source-root<TAB>staged-path<TAB>destination-path" lines.
 # Project installs are a straight copy. User installs relocate into the per-tool
