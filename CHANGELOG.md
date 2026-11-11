@@ -36,6 +36,12 @@ what sits between them. Dates are the day the change landed on `main`.
 
 ### Changed
 
+- Testing is split by platform. `test.sh` tests the sh scripts on Linux and
+  macOS; the new `test.ps1` tests the PowerShell scripts natively on Windows
+  (86 tests in under 30 seconds, where the sh suite under Git Bash took 6+
+  minutes). No machine runs both shells: each suite writes a manifest of test
+  names and file hashes, and a CI `parity` job diffs them.
+
 - Windows builds and installs run an order of magnitude faster (build 58s to
   2s, install 44s to 6s; the full suite 15+ min to 6 min): one awk pass parses
   all frontmatter and triggers, one awk writes every generated file, one awk

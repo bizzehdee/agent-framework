@@ -1,45 +1,72 @@
 name: Verify
 
 # Generated output is not committed, so there is nothing to check for drift here.
-# What must hold is that the test suite passes on every supported platform.
+# What must hold is that each implementation passes its own suite on its own
+# platform, and that the two implementations produce the same bytes.
 
 on:
   # Pushes to a pull request's branch are covered by the pull_request event, so
   # push runs only on main. Without the filter every PR commit runs twice.
   push:
     branches: [main]
-    paths: ['standards/**', 'build.ps1', 'build.sh', 'install.ps1', 'install.sh', 'test.sh', '.github/workflows/verify-generators.yml']
+    paths: ['standards/**', 'build.ps1', 'build.sh', 'install.ps1', 'install.sh', 'test.sh', 'test.ps1', '.github/workflows/verify-generators.yml']
   pull_request:
-    paths: ['standards/**', 'build.ps1', 'build.sh', 'install.ps1', 'install.sh', 'test.sh', '.github/workflows/verify-generators.yml']
+    paths: ['standards/**', 'build.ps1', 'build.sh', 'install.ps1', 'install.sh', 'test.sh', 'test.ps1', '.github/workflows/verify-generators.yml']
   workflow_dispatch:
 
 jobs:
   test:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    # A healthy Windows run takes 5-10 minutes. Without a limit, a genuine hang
-    # holds the runner for GitHub's 6-hour default.
-    timeout-minutes: 20
+    # Without a limit, a genuine hang holds the runner for GitHub's 6-hour default.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        # Ubuntu runs the suite under dash; Git for Windows supplies a POSIX sh;
-        # macOS is the only runner whose /bin/sh is bash 3.2, which rejects
-        # constructs both of the others accept. It has broken the build before -
-        # see the platform gotchas in CONTRIBUTING.md.
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Each platform tests its native implementation and nothing else. Ubuntu
+        # runs the sh suite under dash; macOS runs it under bash 3.2, the only
+        # /bin/sh that rejects constructs the others accept (see the platform
+        # gotchas in CONTRIBUTING.md); Windows runs the PowerShell suite with
+        # native commands.
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
 
       # Fails in seconds with a plain syntax error, rather than part-way through
       # a generation run.
       - name: Shell scripts parse
-        shell: bash
+        if: runner.os != 'Windows'
         run: |
           sh -n ./build.sh
           sh -n ./install.sh
           sh -n ./test.sh
 
-      - name: Test suite
-        shell: bash
-        run: sh ./test.sh
+      - name: Test suite (sh)
+        if: runner.os != 'Windows'
+        run: sh ./test.sh --manifest manifest.txt
+
+      - name: Test suite (PowerShell)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./test.ps1 -Manifest manifest.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manifest-${{ matrix.os }}
+          path: manifest.txt
+
+  # No machine runs both shells. Each suite writes the name of every test and a
+  # SHA-256 of every generated file; identical manifests mean the sh and
+  # PowerShell implementations ran the same tests and produced the same bytes.
+  parity:
+    name: sh and PowerShell agree
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+
+      - name: Compare manifests
+        run: |
+          diff manifest-ubuntu-latest/manifest.txt manifest-windows-latest/manifest.txt
+          diff manifest-ubuntu-latest/manifest.txt manifest-macos-latest/manifest.txt

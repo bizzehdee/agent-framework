@@ -1,25 +1,38 @@
 #!/bin/sh
-# Test suite for the agent instruction framework.
+# Test suite for the POSIX sh implementation: build.sh and install.sh.
 #
-# Verifies build.sh, build.ps1, install.sh and install.ps1, and that the sh and
-# PowerShell implementations agree byte for byte.
+# Each platform tests its own native implementation. This suite covers the sh
+# scripts and runs on Linux and macOS; test.ps1 covers build.ps1 and install.ps1
+# and runs on Windows. Neither runs the other's shell.
 #
-# There is one suite rather than one per shell, because the property under test is
-# agreement between the two. Duplicating the assertions would let the copies drift.
+# The two implementations must still agree byte for byte. That is checked
+# across machines, not on one: --manifest writes the name of every test and a
+# SHA-256 of every generated file, test.ps1 writes the same, and CI diffs the
+# two. Keep the test names and the manifest trees identical in both suites.
 #
-# Requires: POSIX sh, awk, sed, find, cmp, diff. pwsh is optional; tests needing it
-# are reported as skipped when it is absent, never as passed.
+# Requires: POSIX sh, awk, sed, find, cmp, sort. git is optional; the hook tests
+# report as skipped without it, never as passed.
 #
 # Usage:
-#   ./test.sh            Run everything.
-#   ./test.sh -v         Also print each command's output on failure.
+#   ./test.sh                    Run everything.
+#   ./test.sh -v                 Also print each command's output on failure.
+#   ./test.sh --manifest FILE    Also write the parity manifest to FILE.
 
 set -u
 
 REPO_ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 WORK="${TMPDIR:-/tmp}/agent-framework-test-$$"
 VERBOSE=0
-[ "${1:-}" != "-v" ] || VERBOSE=1
+MANIFEST=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -v) VERBOSE=1 ;;
+        --manifest) shift; [ $# -gt 0 ] || { echo "--manifest needs a file" >&2; exit 2; }
+                    MANIFEST="$1" ;;
+        *) echo "Unknown argument: $1" >&2; exit 2 ;;
+    esac
+    shift
+done
 
 PASS=0
 FAIL=0
@@ -29,17 +42,19 @@ FAILED_NAMES=""
 rm -rf "$WORK"
 mkdir -p "$WORK"
 trap 'rm -rf "$WORK"' EXIT INT TERM
-
-HAVE_PWSH=0
-command -v pwsh >/dev/null 2>&1 && HAVE_PWSH=1
+: > "$WORK/test-names"
 
 # --- Harness --------------------------------------------------------------
 
-ok()   { PASS=$((PASS + 1)); printf '  ok    %s\n' "$1"; }
+# Every test name is recorded, whatever its outcome, so the manifest can show
+# that both suites ran the same tests.
+record() { printf '%s\n' "$1" >> "$WORK/test-names"; }
+
+ok()   { PASS=$((PASS + 1)); printf '  ok    %s\n' "$1"; record "$1"; }
 bad()  { FAIL=$((FAIL + 1)); FAILED_NAMES="$FAILED_NAMES
-  - $1"; printf '  FAIL  %s\n' "$1"
+  - $1"; printf '  FAIL  %s\n' "$1"; record "$1"
          [ -z "${2:-}" ] || printf '        %s\n' "$2"; }
-skip() { SKIP=$((SKIP + 1)); printf '  skip  %s (%s)\n' "$1" "$2"; }
+skip() { SKIP=$((SKIP + 1)); printf '  skip  %s (%s)\n' "$1" "$2"; record "$1"; }
 
 section() { printf '\n%s\n' "$1"; }
 
@@ -60,57 +75,21 @@ assert_exit() {
     fi
 }
 
-# assert_same_tree <name> <dir-a> <dir-b>
-assert_same_tree() {
-    if diff -r "$2" "$3" >"$WORK/diff" 2>&1; then ok "$1"
-    else bad "$1" "$(head -n 3 "$WORK/diff" | tr '\n' ' ')"; fi
-}
-
 sh_build()   { sh "$REPO_ROOT/build.sh" "$@" >/dev/null 2>&1; }
-ps_build()   { pwsh -NoProfile -File "$REPO_ROOT/build.ps1" "$@" >/dev/null 2>&1; }
 sh_install() { sh "$REPO_ROOT/install.sh" "$@" </dev/null >/dev/null 2>&1; }
-ps_install() { pwsh -NoProfile -File "$REPO_ROOT/install.ps1" "$@" >/dev/null 2>&1; }
 
 count_files() { find "$1" -type f 2>/dev/null | wc -l | tr -d ' '; }
 root_entries() { ls -A "$1" 2>/dev/null | LC_ALL=C sort | tr '\n' ' '; }
 
-printf 'Agent framework test suite\n'
+printf 'Agent framework test suite (sh)\n'
 printf 'Repo: %s\n' "$REPO_ROOT"
-[ "$HAVE_PWSH" -eq 1 ] || printf 'pwsh not found: cross-shell tests will be skipped.\n'
 
 # --- 1. Scripts parse -----------------------------------------------------
 
 section '1. Scripts parse'
 
-for s in build.sh install.sh; do
-    assert_exit "$s parses under sh -n" 0 sh -n "$REPO_ROOT/$s"
-done
-
-if [ "$HAVE_PWSH" -eq 1 ]; then
-    # A helper script rather than -Command: paths passed as arguments get
-    # translated by MSYS on Windows, whereas a POSIX path embedded in a quoted
-    # -Command string reaches PowerShell unconverted and cannot be resolved.
-    cat > "$WORK/parse-check.ps1" <<'PSEOF'
-param([Parameter(Mandatory)][string]$Path)
-$tokens = $null
-$errors = $null
-[System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errors) | Out-Null
-if ($errors.Count -gt 0) {
-    $errors | ForEach-Object { $_.Message }
-    exit 1
-}
-exit 0
-PSEOF
-
-    for s in build.ps1 install.ps1; do
-        if pwsh -NoProfile -File "$WORK/parse-check.ps1" "$REPO_ROOT/$s" >"$WORK/parse.out" 2>&1
-        then ok "$s parses"
-        else bad "$s parses" "$(head -n 2 "$WORK/parse.out" | tr '\n' ' ')"
-        fi
-    done
-else
-    skip 'PowerShell scripts parse' 'no pwsh'
-fi
+assert_exit 'the build script parses' 0 sh -n "$REPO_ROOT/build.sh"
+assert_exit 'the install script parses' 0 sh -n "$REPO_ROOT/install.sh"
 
 # --- 2. Source validation -------------------------------------------------
 
@@ -513,64 +492,9 @@ sh_install "$WORK/lite-conv" --upgrade --lite -y
 assert_eq '--upgrade --lite converts a full install' \
     "$(root_entries "$WORK/lite-conv")" 'AGENTS.md '
 
-# --- 12. Cross-shell agreement -----------------------------------------
+# --- 12. Upgrade --------------------------------------------------------
 
-section '12. Cross-shell agreement'
-
-if [ "$HAVE_PWSH" -eq 1 ]; then
-    for combo in "default::" "adapters:--adapters all:-Adapters all" \
-                 "stacks-any:--stacks any:-Stacks any" \
-                 "stacks-dotnet:--stacks dotnet:-Stacks dotnet" \
-                 "lite:--lite:-Lite" \
-                 "skillspath:--adapters all --skills-path ~/.agents/skills:-Adapters all -SkillsPath ~/.agents/skills"; do
-        name=$(printf '%s' "$combo" | cut -d: -f1)
-        shargs=$(printf '%s' "$combo" | cut -d: -f2)
-        psargs=$(printf '%s' "$combo" | cut -d: -f3)
-
-        rm -rf "$WORK/x-sh-$name" "$WORK/x-ps-$name"
-        # shellcheck disable=SC2086
-        sh_build --out "$WORK/x-sh-$name" $shargs
-        # shellcheck disable=SC2086
-        ps_build -OutputRoot "$WORK/x-ps-$name" $psargs
-        assert_same_tree "build agrees ($name)" "$WORK/x-sh-$name" "$WORK/x-ps-$name"
-    done
-
-    assert_eq 'the standards version hash agrees' \
-        "$(grep -o 'Standards version: [0-9a-f]*' "$WORK/x-sh-default/AGENTS.md")" \
-        "$(grep -o 'Standards version: [0-9a-f]*' "$WORK/x-ps-default/AGENTS.md")"
-
-    rm -rf "$WORK/i-sh" "$WORK/i-ps"
-    sh_install "$WORK/i-sh" -y --adapters all --stacks all
-    ps_install -Target "$WORK/i-ps" -Yes -Adapters all -Stacks all
-    assert_same_tree 'install agrees (all adapters)' "$WORK/i-sh" "$WORK/i-ps"
-
-    rm -rf "$WORK/j-sh" "$WORK/j-ps"
-    mkdir -p "$WORK/j-sh/src" "$WORK/j-ps/src"
-    : > "$WORK/j-sh/src/A.csproj"
-    : > "$WORK/j-ps/src/A.csproj"
-    sh_install "$WORK/j-sh" -y
-    ps_install -Target "$WORK/j-ps" -Yes
-    assert_same_tree 'stack detection agrees (.NET project)' "$WORK/j-sh" "$WORK/j-ps"
-
-    rm -rf "$WORK/k-sh" "$WORK/k-ps"
-    mkdir -p "$WORK/k-sh/game" "$WORK/k-ps/game"
-    : > "$WORK/k-sh/game/project.godot"
-    : > "$WORK/k-ps/game/project.godot"
-    sh_install "$WORK/k-sh" -y
-    ps_install -Target "$WORK/k-ps" -Yes
-    assert_same_tree 'stack detection agrees (Godot project)' "$WORK/k-sh" "$WORK/k-ps"
-
-    assert_exit 'ps --check agrees on a clean install' 0 \
-        pwsh -NoProfile -File "$REPO_ROOT/install.ps1" -Target "$WORK/i-ps" -Check
-else
-    skip 'cross-shell build agreement' 'no pwsh'
-    skip 'cross-shell install agreement' 'no pwsh'
-    skip 'standards version hash agreement' 'no pwsh'
-fi
-
-# --- 13. Upgrade --------------------------------------------------------
-
-section '13. Upgrade'
+section '12. Upgrade'
 
 # The legacy layout is fabricated rather than generated: the code that produced it
 # is gone from this tree, and what the pruner acts on is the shape on disk. The
@@ -636,14 +560,28 @@ UPGRADED=$(count_files "$WORK/up")
 sh_install "$WORK/up" --upgrade -y
 assert_eq 'a second upgrade is a no-op' "$(count_files "$WORK/up")" "$UPGRADED"
 
-if [ "$HAVE_PWSH" -eq 1 ]; then
-    make_legacy "$WORK/up-sh"
-    make_legacy "$WORK/up-ps"
-    sh_install "$WORK/up-sh" --upgrade -y
-    ps_install -Target "$WORK/up-ps" -Upgrade -Yes
-    assert_same_tree 'upgrade agrees across shells' "$WORK/up-sh" "$WORK/up-ps"
-else
-    skip 'cross-shell upgrade agreement' 'no pwsh'
+# --- Parity manifest ------------------------------------------------------
+# The name of every test, and a SHA-256 of every file in the trees below. The
+# trees are ones the tests above already built and no later test modifies.
+# test.ps1 writes the same lines from the PowerShell implementation; a
+# difference between the two manifests is a parity failure.
+
+if [ -n "$MANIFEST" ]; then
+    if command -v sha256sum >/dev/null 2>&1; then HASHER="sha256sum"
+    else HASHER="shasum -a 256"; fi
+    {
+        LC_ALL=C sort "$WORK/test-names" | sed 's/^/test  /'
+        for tree in def adapters userpath s-any s-dotnet proj-dotnet proj-python \
+                    proj-godot proj-godot-cs inst-claude inst-copilot \
+                    lite lite-any lite-inst lite-conv up; do
+            # shellcheck disable=SC2086
+            # Some sha256sum builds mark binary mode as " *path"; normalise to the
+            # two-space form so the line is the same on every platform.
+            ( cd "$WORK" && find "$tree" -type f | LC_ALL=C sort | xargs $HASHER ) |
+                sed 's/^\([0-9a-f]*\) [ *]/\1  /'
+        done
+    } > "$MANIFEST"
+    printf '\nManifest: %s\n' "$MANIFEST"
 fi
 
 # --- Summary ------------------------------------------------------------

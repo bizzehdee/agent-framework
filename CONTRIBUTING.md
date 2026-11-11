@@ -11,7 +11,7 @@ standards/*.md          Source of truth. The only files you edit.
 
 build.ps1  build.sh     Generate into a directory.
 install.ps1  install.sh Detect, then generate and copy into a destination.
-test.sh                 The test suite.
+test.sh  test.ps1       The test suites, one per implementation.
 ```
 
 Generated output is never committed. Everything is produced at install time.
@@ -88,8 +88,8 @@ An adapter file carries the discovery metadata its tool needs and points at the
 whole point of the layout, and the suite fails an adapter file over 15 lines.
 The one exception is `hooks`: its `pre-commit` is generated tooling, not a
 pointer, so the 15-line rule does not apply to it. Its body is a shared literal
-that must stay byte-identical between `build.sh` and `build.ps1`; the
-cross-shell suite diffs it.
+that must stay byte-identical between `build.sh` and `build.ps1`; the CI
+parity job catches a difference.
 
 1. Add a branch to `build.ps1` and the matching branch to `build.sh`, and add the
    name to `$KnownAdapters` / `KNOWN_ADAPTERS`.
@@ -137,13 +137,27 @@ and strips CR before hashing.
 
 ## Tests
 
+Each platform tests its own native implementation, and no machine runs the
+other's shell:
+
 ```bash
 ./test.sh
 ```
 
-One suite, not one per shell: the property under test is that the two
-implementations agree, so duplicating the assertions would let the copies drift.
-`pwsh` is optional — tests needing it report as skipped, never as passed.
+```bash
+pwsh ./test.ps1
+```
+
+`test.sh` covers `build.sh` and `install.sh` and runs on Linux and macOS.
+`test.ps1` covers `build.ps1` and `install.ps1` with native commands and runs on
+Windows. Run the one for the platform you are on.
+
+Two suites could drift, so the manifest holds them together. `--manifest FILE` /
+`-Manifest FILE` writes the name of every test and a SHA-256 of every generated
+file. CI uploads one from each platform and a `parity` job diffs them: identical
+manifests mean both suites ran the same tests and both implementations produced
+the same bytes. So a test added to one suite must be added to the other under
+the same name, and the list of manifest trees must match.
 
 Covers parsing, source and frontmatter validation, argument rejection, default
 output shape, Agent Skills spec conformance, trigger-table correctness, output
@@ -151,8 +165,9 @@ hygiene, stack filtering and detection, install idempotency, `--force`,
 `--dry-run`, adapter opt-in, `--skills-path` threading, check mode, upgrade
 migration and pruning, and cross-shell agreement.
 
-CI runs the suite on Linux, where `/bin/sh` is dash, Windows, where it is the sh
-supplied by Git for Windows, and macOS, where it is bash 3.2.
+CI runs `test.sh` on Linux, where `/bin/sh` is dash, and on macOS, where it is
+bash 3.2, and `test.ps1` on Windows. The sh scripts are not exercised under Git
+for Windows' sh: a Windows user is expected to use the PowerShell scripts.
 
 ## Platform gotchas
 
