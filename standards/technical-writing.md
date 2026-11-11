@@ -57,3 +57,12 @@ When output is read by both audiences, apply Mode A.
 
 Confirm terminology is consistent, every instruction is unambiguous, and each
 sentence carries one idea.
+
+## Checklist
+
+- [ ] One idea per sentence, in simple active English.
+- [ ] One term per concept, never varied.
+- [ ] Vague words replaced with measurable values.
+- [ ] Modal verbs used consistently: must, should, may, can.
+- [ ] Procedures numbered in execution order, condition before action.
+- [ ] No filler, idiom, marketing language, or ambiguous pronoun.

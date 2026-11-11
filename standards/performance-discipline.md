@@ -45,3 +45,12 @@ obvious from the code, as a non-obvious why ([[code-quality]]).
 
 State the measurement before, the change made, the measurement after, and the method
 used, so the result can be reproduced.
+
+## Checklist
+
+- [ ] Correctness came first; no optimisation preceded a measurement.
+- [ ] Every performance claim states what was measured, how, and the number.
+- [ ] No query inside a loop over another query's results.
+- [ ] Only the columns used are loaded; filtering and pagination happen in the database.
+- [ ] Large payloads are streamed and size-limited, never fully buffered.
+- [ ] No nested loop over two collections that both grow with data volume.

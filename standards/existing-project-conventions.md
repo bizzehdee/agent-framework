@@ -64,3 +64,11 @@ standard.
 
 The exception is security. If a repository or language convention is insecure,
 raise it rather than following it ([[secure-engineering]] is non-negotiable).
+
+## Checklist
+
+- [ ] Build and test commands, structure, and conventions established before the first change.
+- [ ] New code matches the surrounding code's naming, formatting, and error handling.
+- [ ] No new framework, library, pattern, or architectural style without approval.
+- [ ] No existing code migrated to a preferred style inside an unrelated change.
+- [ ] Every conflict with a repository or language convention was named and the repository or language followed, except an insecure one, which was raised.

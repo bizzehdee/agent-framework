@@ -94,3 +94,12 @@ cause often masks the real one.
 - A candidate you cannot test with available access is `untested`. Say what access
   is needed. Never silently drop it.
 - A confirmed cause requires a regression test ([[testing-standards]]).
+
+## Checklist
+
+- [ ] Every cause the evidence allows was enumerated before any test ran.
+- [ ] Every elimination cites a recorded observation, never plausibility.
+- [ ] The elimination table is current: one row per candidate with its status.
+- [ ] No code was changed except to test a named candidate.
+- [ ] The surviving cause has direct positive evidence, not just no rivals.
+- [ ] Any non-trivial decision rests on a gathered observation, not a theory.
