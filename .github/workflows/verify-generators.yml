@@ -23,12 +23,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Ubuntu runs the suite under dash; Git for Windows supplies a POSIX sh.
-        # macOS is deliberately not in the matrix. Note that removes the only
-        # runner with bash 3.2 as /bin/sh, which is stricter than both of these,
-        # so bash 3.2 regressions will no longer be caught here. See the platform
-        # gotchas in CONTRIBUTING.md.
-        os: [ubuntu-latest, windows-latest]
+        # Ubuntu runs the suite under dash; Git for Windows supplies a POSIX sh;
+        # macOS is the only runner whose /bin/sh is bash 3.2, which rejects
+        # constructs both of the others accept. It has broken the build before -
+        # see the platform gotchas in CONTRIBUTING.md.
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
