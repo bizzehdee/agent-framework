@@ -230,7 +230,7 @@ Universal (`stack: any`):
 | `godot-scripting` | Static typing, naming and member order, Godot 4 signals, exports, C# partial classes and generated names. |
 | `godot-scene-architecture` | Call down and signal up, autoload discipline, shared resources, the frame loop, main-thread rule, freeing, multiplayer authority. |
 
-`_core.md` holds the nine non-negotiables. It is injected inline into `AGENTS.md`
+`_core.md` holds the ten non-negotiables. It is injected inline into `AGENTS.md`
 and never becomes a skill of its own — a rule that applies only once loaded is not a
 non-negotiable.
 

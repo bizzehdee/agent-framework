@@ -19,36 +19,37 @@ These apply always. Do not wait to load a standard before honouring them.
    your first change. Read `.learnings/` — its index and every relevant entry —
    before your first change, and record what this task teaches back into it,
    creating the directory if it does not exist yet.
-   Read `plan.md`, and the `docs/` documents it indexes, for what the project is
-   for and what is in scope. Update the document that owns the changed section —
-   and its one revision row for the commit — in the same change that adds,
-   changes, or removes a feature. Read `task.md` and the current phase's document
-   in `tasks/` before starting work, and tick a task there only when it is done.
-   Record a reported bug in `tasks/bugs.md` before fixing it. Before producing
-   any work on a task or bug, write its spec: `specs/spec-TASK-<n>.md` or
-   `specs/spec-BUG-<n>.md`. When the work ends, write its summary in
-   `summaries/`, naming every deviation from the spec. Neither blocks work when
-   missing, or when the user says to skip it.
-   Detail: `existing-project-conventions`, `learnings`, `project-planning`,
-   `task-tracking`.
-3. **Tests must pass before a task is done.** Do not mark a checkbox or report
+   Detail: `existing-project-conventions`, `learnings`.
+3. **The project's planning and tracking documents stay current.** Read `plan.md`,
+   and the `docs/` documents it indexes, for what the project is for and what is
+   in scope, and `task.md` and the current phase's document in `tasks/` before
+   starting work. Update the document that owns a changed section — and its one
+   revision row for the commit — in the same change that adds, changes, or
+   removes a feature, and tick a task only when it is done. Record a reported
+   bug in `tasks/bugs.md` before fixing it. Before producing any work on a task
+   or bug, write its spec: `specs/spec-TASK-<n>.md` or `specs/spec-BUG-<n>.md`;
+   when the work ends, write its summary in `summaries/`, naming every deviation
+   from the spec. None of these documents blocks work when missing, or when the
+   user says to skip it.
+   Detail: `project-planning`, `task-tracking`.
+4. **Tests must pass before a task is done.** Do not mark a checkbox or report
    completion until you have run the tests and observed them pass. If they fail,
    include the output. Detail: `testing-standards`.
-4. **Do not guess.** Do not assume unstated requirements. Ask when requirements
+5. **Do not guess.** Do not assume unstated requirements. Ask when requirements
    are ambiguous, and when obvious candidate answers exist, present them as
    options rather than asking open-ended.
-5. **Prefer modifying existing working code over rewriting it.**
-6. **Justify before you abstract, and ask before you re-architect.** State why a
+6. **Prefer modifying existing working code over rewriting it.**
+7. **Justify before you abstract, and ask before you re-architect.** State why a
    new abstraction is needed before adding it. Obtain approval before an
    architectural change. Detail: `code-quality`, `architecture-principles`.
-7. **Diagnose by elimination, never by fix-first.** Do not change code to see what
+8. **Diagnose by elimination, never by fix-first.** Do not change code to see what
    happens. Change code only to test a named candidate, and name it first.
    Detail: `elimination-debugging`.
-8. **A canonical document is binding and locked.** A document whose heading is
+9. **A canonical document is binding and locked.** A document whose heading is
    followed by a `> **Canonical.**` marker is the immutable source of truth for
    the scope it names. Read it before working inside that scope and conform to it
    exactly; a deviation is a defect. Never edit one without the double sign-off
    procedure, and never as a side effect. Detail: `canonical-documents`.
-9. **Report outcomes faithfully.** If a step was skipped, say so. If a result is
+10. **Report outcomes faithfully.** If a step was skipped, say so. If a result is
    unverified, label it unverified. Do not describe intended behaviour as
    observed behaviour.
