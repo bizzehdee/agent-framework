@@ -41,6 +41,12 @@ $Work = Join-Path ([System.IO.Path]::GetTempPath()) "agent-framework-test-$PID"
 if (Test-Path $Work) { Remove-Item $Work -Recurse -Force }
 New-Item -ItemType Directory -Path $Work -Force | Out-Null
 
+# Resolved now, against the caller's directory: a bare file name has no parent
+# to create, and the hook tests change location before the manifest is written.
+if ($Manifest) {
+    $Manifest = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Manifest)
+}
+
 $script:Pass = 0
 $script:Fail = 0
 $script:Skip = 0
