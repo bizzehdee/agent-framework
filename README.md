@@ -44,6 +44,7 @@ To migrate an install made by an earlier version, see
 |---|---|
 | `--stacks LIST` / `-Stacks` | Which stacks to install. Default: detected. |
 | `--adapters LIST` / `-Adapters` | Add tool-specific directories. Default: none. |
+| `--lite` / `-Lite` | One always-on `AGENTS.md` for small local models. No skills tree, no adapters. |
 | `--check` / `-Check` | Report whether an install is current. Writes nothing. |
 | `--upgrade` / `-Upgrade` | Migrate an existing install to the current layout. Implies `--force`. |
 | `--yes` / `-Yes` | Accept defaults, no prompt. |
@@ -71,6 +72,24 @@ One skills tree serves every tool that reads the user-level Agent Skills locatio
 A user install includes every stack, since it serves all your projects — the
 descriptions are stack-scoped, so a .NET standard will not trigger in a Python
 project.
+
+### Lite: small local models
+
+The standard layout assumes a model that loads a skill when its trigger
+matches. A small local model — 9–12B dense, or a 27B-class MoE, with a 128k
+window — cannot be relied on to do that, and does better with fewer, blunter
+words. `--lite` installs one always-on file instead:
+
+```bash
+./install.sh /path/to/project --lite
+```
+
+It writes a single `AGENTS.md` — the ten non-negotiables plus each standard's
+checklist as imperative rules, stack-filtered as usual — at roughly 5k tokens
+for every stack, and less once filtered. There is no skills tree and adapters
+are refused. `--check` and `--upgrade` read the mode from the stamp, so a lite
+install stays lite, and `--upgrade --lite` converts a full install, pruning the
+skills tree.
 
 ## Stack scoping
 

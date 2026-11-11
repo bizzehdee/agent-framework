@@ -8,6 +8,16 @@ what sits between them. Dates are the day the change landed on `main`.
 
 ### Added
 
+- `--lite` on build and install: one always-on `AGENTS.md` for small-context
+  local models — the core rules plus each standard's checklist as rules, ~5k
+  tokens for all stacks. No skills tree, no adapters; `--check` and `--upgrade`
+  keep the mode, and `--upgrade --lite` converts a full install.
+- Every standard now ends with a checklist (four gained one); the lite build
+  derives from it and the suite enforces it.
+- `technical-writing` gains "Reading like a person wrote it": rules against
+  machine-sounding prose in human-facing documents and replies, distilled from
+  blader/humanizer.
+
 - Canonical documents: a `> **Canonical.** ` marker after a document's heading
   makes it a binding, locked source of truth. Work in its scope must conform
   exactly, and edits need double sign-off. New `canonical-documents` standard

@@ -25,6 +25,10 @@ explains the gap between them.
 Standards must be as concise as possible while remaining wholly unambiguous. Add
 words only where they remove ambiguity.
 
+Every standard ends with a `## Checklist` of `- [ ]` items. The lite build
+(`--lite`) inlines a standard as its checklist, so a standard without one would
+silently vanish from lite installs; the suite enforces it.
+
 Frontmatter is single-line `key: value` pairs, hand-parsed, so there is no YAML
 dependency:
 
