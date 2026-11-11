@@ -18,7 +18,7 @@
 #   ./build.sh --out DIR [options]
 #
 # Options:
-#   --adapters LIST     Optional adapters: claude,copilot,all,none (default: none).
+#   --adapters LIST     Optional adapters: claude,copilot,hooks,all,none (default: none).
 #   --stacks LIST       Which stacks to include: all, any, dotnet, ... (default: all).
 #                       A standard with "stack: any" is always included.
 #   --skills-path PATH  Where AGENTS.md and the adapters say the skills live
@@ -55,10 +55,10 @@ mkdir -p "$OUTPUT_ROOT"
 OUTPUT_ROOT=$(CDPATH='' cd -- "$OUTPUT_ROOT" && pwd)
 
 # Everything else reads .agents/skills/ natively, or falls back to the AGENTS.md
-# table. Only these two need a directory of their own: Claude Code does not read
-# .agents/skills/ at all, and Copilot has a glob-attach mechanism that skills do
-# not cover.
-KNOWN_ADAPTERS="claude copilot"
+# table. Claude Code does not read .agents/skills/ at all, Copilot has a
+# glob-attach mechanism that skills do not cover, and hooks turns the
+# no-hardcodes gate into a real git pre-commit hook.
+KNOWN_ADAPTERS="claude copilot hooks"
 
 REQUESTED=$(echo "$ADAPTERS" | tr ',' ' ' | tr '[:upper:]' '[:lower:]')
 for a in $REQUESTED; do
@@ -403,6 +403,70 @@ EOF
             printf 'follow it. That file is the standard; this one only points at it.\n'
         } | write_generated ".github/instructions/$n.instructions.md"
     done
+fi
+
+# The hooks adapter is tooling, not a pointer: it turns the no-hardcodes
+# standard's pre-commit gate into a real git hook, so a human commit meets the
+# same gate an agent applies. Enabled per clone with:
+#   git config core.hooksPath .githooks
+if has_adapter hooks; then
+    {
+        printf '#!/bin/sh\n'
+        printf '# GENERATED FILE. Do not edit.\n'
+        printf '# Source: standards/no-hardcodes.md in the agent-framework repository.\n'
+        printf '# Standards version: %s | stacks: %s\n' "$STANDARDS_VERSION" "$STACKS_STAMP"
+        cat <<'HOOK'
+#
+# Pre-commit gate from the no-hardcodes standard: scans the staged diff's
+# added lines for secrets and environment-specific values, and blocks the
+# commit on a hit. Enable it per clone with:
+#
+#   git config core.hooksPath .githooks
+#
+# Only the user may waive a finding, and only after hearing the risk. Agents
+# must never bypass this hook.
+
+findings=$(git diff --cached --diff-filter=ACM --unified=0 --no-color | awk '
+    /^\+\+\+ / { file = substr($0, 7); next }
+    /^@@ /     { split($0, h, "+"); split(h[2], p, /[, ]/); line = p[1] - 1; next }
+    /^\+/ {
+        line = line + 1
+        if (file ~ /^\.githooks\//) next
+        text = substr($0, 2)
+        lower = tolower(text)
+        # Obvious placeholders and local-dev values never block.
+        if (lower ~ /<[a-z_-]+>|changeme|xxxx|example\.com|localhost|127\.0\.0\.1/) next
+        hit = ""
+        if (lower ~ /-----begin [a-z ]*private key-----/)
+            hit = "private key"
+        else if (lower ~ /(password|passwd|pwd)[[:space:]]*[=:][[:space:]]*[^[:space:]]/)
+            hit = "password"
+        else if (lower ~ /(api[_-]?key|secret|token|accountkey)[[:space:]]*[=:][[:space:]]*["]?[a-z0-9+\/_.=-]{12,}/)
+            hit = "credential"
+        else if (text ~ /AKIA[0-9A-Z]{16}/)
+            hit = "AWS access key"
+        else if (lower ~ /[a-z+.-]+:\/\/[^\/[:space:]:]+:[^\/[:space:]@]+@/)
+            hit = "credential in URL"
+        # Report the location and category only. Never echo the value itself.
+        if (hit != "") printf "  %s:%d  %s\n", file, line, hit
+        next
+    }
+')
+
+if [ -n "$findings" ]; then
+    echo "no-hardcodes: commit blocked. Staged lines that look like secrets or"
+    echo "environment-specific values:"
+    echo ""
+    printf '%s\n' "$findings"
+    echo ""
+    echo "Move each value to configuration or a secret store, then stage the"
+    echo "change again. See the no-hardcodes standard for the remedy rules."
+    exit 1
+fi
+exit 0
+HOOK
+    } | write_generated '.githooks/pre-commit'
+    chmod +x "$OUTPUT_ROOT/.githooks/pre-commit" 2>/dev/null || true
 fi
 
 echo ""

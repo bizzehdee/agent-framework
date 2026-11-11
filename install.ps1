@@ -28,8 +28,9 @@
     (~/.codex) always-on files.
 
 .PARAMETER Adapters
-    Add tool-specific directories: claude, copilot, all, none. Defaults to none.
-    Passing this skips the prompt. Accepts an array or a comma-separated string.
+    Add tool-specific directories: claude, copilot, hooks, all, none. Defaults to
+    none. Passing this skips the prompt. Accepts an array or a comma-separated
+    string.
 
 .PARAMETER Check
     Report whether an existing install matches the current standards. Writes
@@ -158,6 +159,7 @@ $ToolLabels = @{
 $AdapterNotes = [ordered]@{
     claude  = '.claude/skills/    Claude Code does not read .agents/skills/'
     copilot = '.github/           glob-attached instructions'
+    hooks   = '.githooks/         no-hardcodes pre-commit gate'
 }
 
 function Test-Cmd {
@@ -310,6 +312,12 @@ if ($inspect) {
         $inferred = [System.Collections.Generic.List[string]]::new()
         if (Test-Path (Join-Path $destination '.claude/skills')) { $inferred.Add('claude') }
         if (Test-Path (Join-Path $destination '.github/copilot-instructions.md')) { $inferred.Add('copilot') }
+        # Only a generated hook marks the adapter: a hook the user wrote
+        # themselves must not be claimed, or an upgrade would overwrite it.
+        $hookFile = Join-Path $destination '.githooks/pre-commit'
+        if ((Test-Path $hookFile) -and (Select-String -Path $hookFile -Pattern 'GENERATED FILE' -Quiet)) {
+            $inferred.Add('hooks')
+        }
         # .cursor/rules is a retired adapter, not a current one: Cursor reads
         # .agents/skills natively now. Inferring 'cursor' here would fail the
         # build, so it is only noted, and the directory is pruned on upgrade.
@@ -390,8 +398,8 @@ else {
     Write-Host ''
 
     if (-not $adaptersExplicit) {
-        Write-Host 'Optional adapters add a directory that points at .agents/skills/, for the'
-        Write-Host "two tools that need one. They never copy a standard's text:"
+        Write-Host "Optional adapters add a tool-specific directory. None copies a standard's"
+        Write-Host 'text:'
         Write-Host ''
         $offered = @($AdapterNotes.Keys)
         for ($i = 0; $i -lt $offered.Count; $i++) {
@@ -602,7 +610,7 @@ if ($script:skipped -gt 0 -and -not $Force) {
 
 $managedDirs = @(
     'standards', '.agents/skills', '.claude/skills', '.claude/standards',
-    '.codex/standards', '.cursor/rules', '.github/instructions'
+    '.codex/standards', '.cursor/rules', '.github/instructions', '.githooks'
 )
 
 # Every source standard, including _core and those excluded by stack, so a file

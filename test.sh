@@ -426,6 +426,28 @@ sh_install "$WORK/inst-copilot" -y --adapters copilot
 assert_eq '--adapters copilot adds copilot-instructions.md' \
     "$([ -f "$WORK/inst-copilot/.github/copilot-instructions.md" ] && echo yes || echo no)" 'yes'
 
+# The hooks adapter is tooling, not a pointer: a working no-hardcodes gate.
+if command -v git >/dev/null 2>&1; then
+    sh_install "$WORK/inst-hooks" -y --adapters hooks
+    assert_eq '--adapters hooks writes the pre-commit gate' \
+        "$([ -f "$WORK/inst-hooks/.githooks/pre-commit" ] && echo yes || echo no)" 'yes'
+
+    ( cd "$WORK/inst-hooks" && git init -q . &&
+      git config user.email test@example.com && git config user.name test &&
+      printf 'password = "hunter2hunter2"\n' > app.conf && git add app.conf
+    ) >/dev/null 2>&1
+    ( cd "$WORK/inst-hooks" && sh .githooks/pre-commit ) >/dev/null 2>&1
+    assert_eq 'the hook blocks a staged secret' "$?" '1'
+
+    ( cd "$WORK/inst-hooks" &&
+      printf 'password = "<db-password>"\n' > app.conf && git add app.conf
+    ) >/dev/null 2>&1
+    ( cd "$WORK/inst-hooks" && sh .githooks/pre-commit ) >/dev/null 2>&1
+    assert_eq 'the hook allows an obvious placeholder' "$?" '0'
+else
+    skip 'hooks adapter gate' 'no git'
+fi
+
 # --dry-run must not touch the destination.
 mkdir -p "$WORK/dry"
 sh_install "$WORK/dry" -y --dry-run

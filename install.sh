@@ -19,7 +19,7 @@
 #   ./install.sh --user [options]           Install to user-level config (claude, codex).
 #
 # Options:
-#   --adapters LIST  Add tool-specific directories: claude,copilot,all,none
+#   --adapters LIST  Add tool-specific directories: claude,copilot,hooks,all,none
 #                    (default: none). Passing this skips the prompt.
 #   --stacks LIST    Which stacks to install: all, any, dotnet, python, rust, c-cpp,
 #                    node, go. Default: detected from the target project.
@@ -236,6 +236,7 @@ adapter_note() {
     case "$1" in
         claude)  echo ".claude/skills/    Claude Code does not read .agents/skills/" ;;
         copilot) echo ".github/           glob-attached instructions" ;;
+        hooks)   echo ".githooks/         no-hardcodes pre-commit gate" ;;
     esac
 }
 
@@ -283,6 +284,10 @@ if [ "$INSPECT" -eq 1 ]; then
         ADAPTERS=""
         [ -d "$DESTINATION/.claude/skills" ] && ADAPTERS="$ADAPTERS,claude"
         [ -f "$DESTINATION/.github/copilot-instructions.md" ] && ADAPTERS="$ADAPTERS,copilot"
+        # Only a generated hook marks the adapter: a hook the user wrote
+        # themselves must not be claimed, or an upgrade would overwrite it.
+        grep -q 'GENERATED FILE' "$DESTINATION/.githooks/pre-commit" 2>/dev/null && \
+            ADAPTERS="$ADAPTERS,hooks"
         # .cursor/rules is a retired adapter, not a current one: Cursor reads
         # .agents/skills natively now. Inferring "cursor" here would fail the
         # build, so it is only noted, and the directory is pruned on upgrade.
@@ -355,10 +360,10 @@ else
     echo ""
 
     if [ "$ADAPTERS_EXPLICIT" -eq 0 ]; then
-        echo "Optional adapters add a directory that points at .agents/skills/, for the"
-        echo "two tools that need one. They never copy a standard's text:"
+        echo "Optional adapters add a tool-specific directory. None copies a standard's"
+        echo "text:"
         echo ""
-        OFFERED="claude copilot"
+        OFFERED="claude copilot hooks"
         idx=0
         for a in $OFFERED; do
             idx=$((idx + 1))
@@ -558,7 +563,7 @@ fi
 # same directory and must survive an upgrade untouched.
 
 MANAGED_DIRS="standards .agents/skills .claude/skills .claude/standards
-.codex/standards .cursor/rules .github/instructions"
+.codex/standards .cursor/rules .github/instructions .githooks"
 
 # Every source standard, including _core and those excluded by stack, so a file
 # left behind by a stack change is still recognised as ours rather than yours.

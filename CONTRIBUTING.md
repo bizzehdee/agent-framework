@@ -67,16 +67,21 @@ Most tools need no code at all. A tool that reads `.agents/skills/` is already
 served by the default output, and one that reads `AGENTS.md` finds every standard
 through its trigger table.
 
-An adapter is warranted only when a tool reads neither. There are two:
+An adapter is warranted only when a tool reads neither. There are three:
 
 | Adapter | Why it exists |
 |---|---|
 | `claude` | Claude Code reads `.claude/skills/` and does not look in `.agents/skills/`. |
 | `copilot` | `applyTo` glob attachment is passive, which no skill loader offers. |
+| `hooks` | git runs hooks, not Markdown: the `no-hardcodes` gate needs a real `pre-commit` to bind human commits. |
 
 An adapter file carries the discovery metadata its tool needs and points at the
 `.agents/skills/` copy. It must never repeat a standard's text — one copy is the
 whole point of the layout, and the suite fails an adapter file over 15 lines.
+The one exception is `hooks`: its `pre-commit` is generated tooling, not a
+pointer, so the 15-line rule does not apply to it. Its body is a shared literal
+that must stay byte-identical between `build.sh` and `build.ps1`; the
+cross-shell suite diffs it.
 
 1. Add a branch to `build.ps1` and the matching branch to `build.sh`, and add the
    name to `$KnownAdapters` / `KNOWN_ADAPTERS`.

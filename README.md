@@ -87,22 +87,33 @@ standards only.
 
 ## Optional adapters
 
-Off unless requested. There are only two, because every other tool reads
-`.agents/skills/` or `AGENTS.md` already.
+Off unless requested. Every other tool reads `.agents/skills/` or `AGENTS.md`
+already.
 
 | Adapter | Writes | Why it exists |
 |---|---|---|
 | `claude` | `.claude/skills/<name>/SKILL.md` | Claude Code reads `.claude/skills/` and does not look in `.agents/skills/`. |
 | `copilot` | `.github/copilot-instructions.md`, `.github/instructions/` | `applyTo` glob attachment is passive, which no skill loader offers. |
+| `hooks` | `.githooks/pre-commit` | Turns the `no-hardcodes` gate into a real git hook, so human commits meet the same gate agents apply. |
 
 ```bash
 ./install.sh /path/to/project --adapters claude
 ```
 
-Both write **pointers**, never a second copy: an adapter file carries the frontmatter
-its tool needs to discover the standard, and a one-line body telling it to read
-`.agents/skills/<name>/SKILL.md`. Copilot's glob files cover only the standards that
-declare natural globs; the rest are listed by path in the repo-wide file.
+`claude` and `copilot` write **pointers**, never a second copy: an adapter file
+carries the frontmatter its tool needs to discover the standard, and a one-line
+body telling it to read `.agents/skills/<name>/SKILL.md`. Copilot's glob files
+cover only the standards that declare natural globs; the rest are listed by path
+in the repo-wide file.
+
+`hooks` writes tooling rather than a pointer: a POSIX sh pre-commit hook that
+scans the staged diff's added lines for secrets and environment-specific values
+and blocks the commit on a hit, reporting file, line, and category — never the
+value itself. Enable it per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
 
 Skipping the `claude` adapter is not a loss of coverage — Claude Code then reads
 `AGENTS.md` and opens the path from its table, the same as any tool without a
