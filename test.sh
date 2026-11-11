@@ -171,6 +171,17 @@ for f in "$REPO_ROOT"/standards/*.md; do
 done
 assert_eq 'no universal standard links a stack-scoped one' "${CROSS_REFS:-none}" 'none'
 
+# The lite build inlines each standard as its checklist, so a standard without
+# one would silently vanish from a lite install.
+NO_CHECKLIST=""
+for f in "$REPO_ROOT"/standards/*.md; do
+    b=$(basename "$f" .md)
+    [ "${b#_}" = "$b" ] || continue
+    n=$(awk '/^## Checklist/{c=1;next} c&&/^## /{exit} c&&/^- \[ \] /{n++} END{print n+0}' "$f")
+    [ "$n" -gt 0 ] || NO_CHECKLIST="$NO_CHECKLIST $b"
+done
+assert_eq 'every standard has a checklist (lite depends on it)' "${NO_CHECKLIST:-none}" 'none'
+
 # --- 3. Frontmatter validation is enforced --------------------------------
 
 section '3. Frontmatter validation is enforced'
@@ -475,14 +486,42 @@ sh_install "$WORK/inst" -y --force
 assert_exit '--check passes again after repair' 0 \
     sh "$REPO_ROOT/install.sh" "$WORK/inst" --check
 
-# --- 11. Cross-shell agreement -----------------------------------------
+# --- 11. Lite -------------------------------------------------------------
 
-section '11. Cross-shell agreement'
+section '11. Lite'
+
+sh_build --out "$WORK/lite" --lite
+assert_eq 'lite build root is AGENTS.md only' "$(root_entries "$WORK/lite")" 'AGENTS.md '
+assert_eq 'lite AGENTS.md is stamped with its mode' \
+    "$(grep -c 'mode: lite' "$WORK/lite/AGENTS.md")" '1'
+assert_eq 'lite AGENTS.md holds one section per standard' \
+    "$(grep -c '^### ' "$WORK/lite/AGENTS.md")" "$SRC_STANDARDS"
+assert_exit 'lite refuses adapters' 2 \
+    sh "$REPO_ROOT/build.sh" --out "$WORK/lite-x" --lite --adapters claude
+
+sh_build --out "$WORK/lite-any" --lite --stacks any
+assert_eq 'lite respects stack filtering' \
+    "$(grep -c -E "^### ($DOTNET_PATTERN)" "$WORK/lite-any/AGENTS.md")" '0'
+
+sh_install "$WORK/lite-inst" -y --lite
+assert_eq 'lite install root is AGENTS.md only' "$(root_entries "$WORK/lite-inst")" 'AGENTS.md '
+assert_exit '--check regenerates a lite install as lite' 0 \
+    sh "$REPO_ROOT/install.sh" "$WORK/lite-inst" --check
+
+sh_install "$WORK/lite-conv" -y
+sh_install "$WORK/lite-conv" --upgrade --lite -y
+assert_eq '--upgrade --lite converts a full install' \
+    "$(root_entries "$WORK/lite-conv")" 'AGENTS.md '
+
+# --- 12. Cross-shell agreement -----------------------------------------
+
+section '12. Cross-shell agreement'
 
 if [ "$HAVE_PWSH" -eq 1 ]; then
     for combo in "default::" "adapters:--adapters all:-Adapters all" \
                  "stacks-any:--stacks any:-Stacks any" \
                  "stacks-dotnet:--stacks dotnet:-Stacks dotnet" \
+                 "lite:--lite:-Lite" \
                  "skillspath:--adapters all --skills-path ~/.agents/skills:-Adapters all -SkillsPath ~/.agents/skills"; do
         name=$(printf '%s' "$combo" | cut -d: -f1)
         shargs=$(printf '%s' "$combo" | cut -d: -f2)
@@ -529,9 +568,9 @@ else
     skip 'standards version hash agreement' 'no pwsh'
 fi
 
-# --- 12. Upgrade --------------------------------------------------------
+# --- 13. Upgrade --------------------------------------------------------
 
-section '12. Upgrade'
+section '13. Upgrade'
 
 # The legacy layout is fabricated rather than generated: the code that produced it
 # is gone from this tree, and what the pruner acts on is the shape on disk. The
