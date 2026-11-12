@@ -32,7 +32,9 @@
 
 .PARAMETER Lite
     Emit a single AGENTS.md for small-context local models: the core rules plus
-    each standard's checklist, inline. No skills tree, and adapters are refused.
+    the checklist of each universal standard, inline. No skills tree, and
+    adapters are refused. No stack-scoped standard is included unless -Stacks
+    names its stack (-Lite -Stacks dotnet,unreal).
 
 .EXAMPLE
     ./build.ps1 -OutputRoot ../my-project
@@ -186,6 +188,9 @@ function Get-StandardsVersion {
 $standardsVersion = Get-StandardsVersion
 
 $core = Read-Standard (Join-Path $StandardsDir '_core.md')
+
+# Lite is the core rules and the universal standards unless stacks are named.
+if ($Lite -and -not $PSBoundParameters.ContainsKey('Stacks')) { $Stacks = @('any') }
 
 $requestedStacks = @($Stacks -split ',' | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ })
 

@@ -294,6 +294,8 @@ $SrcStandards = $Standards.Count
 $DotnetNames = @(Get-StackNames 'dotnet')
 $PythonNames = @(Get-StackNames 'python')
 $GodotNames = @(Get-StackNames 'godot')
+$UnrealNames = @(Get-StackNames 'unreal')
+$CppNames = @(Get-StackNames 'c-cpp')
 # Standards scoped to any named stack, i.e. excluded from a stacks=any build.
 $SrcStacked = @($Sources | Where-Object { (Get-FrontmatterValue $_.FullName 'stack') -ne 'any' }).Count
 
@@ -465,6 +467,19 @@ Assert-Eq 'a C# Godot project receives the godot and dotnet standards' `
     (Get-SkillCount $ProjGodotCs ($GodotNames + $DotnetNames)) ($GodotNames.Count + $DotnetNames.Count)
 Assert-Eq 'a .NET project receives no python standards' (Get-SkillCount $ProjDotnet $PythonNames) 0
 
+# Unreal generates a .sln and .vcxproj files; neither makes the project .NET or
+# general C++.
+$ProjUnreal = Join-Path $Work 'proj-unreal'
+Set-Text (Join-Path $ProjUnreal 'Game.uproject') ''
+Set-Text (Join-Path $ProjUnreal 'Game.sln') ''
+Set-Text (Join-Path $ProjUnreal 'Game.vcxproj') ''
+Set-Text (Join-Path $ProjUnreal 'Intermediate/ProjectFiles/Game.csproj') ''
+
+Invoke-Install @{ Target = $ProjUnreal; Yes = $true }
+Assert-Eq 'an Unreal project receives the unreal standards' (Get-SkillCount $ProjUnreal $UnrealNames) $UnrealNames.Count
+Assert-Eq 'an Unreal project ignores its generated project files' `
+    (Get-SkillCount $ProjUnreal ($DotnetNames + $CppNames)) 0
+
 # --- 9. Install behaviour ------------------------------------------------
 
 Section '9. Install behaviour'
@@ -568,20 +583,38 @@ Invoke-Build @{ OutputRoot = $Lite; Lite = $true }
 Assert-Eq 'lite build root is AGENTS.md only' (Get-RootEntries $Lite) 'AGENTS.md'
 Assert-Eq 'lite AGENTS.md is stamped with its mode' `
     (Get-MatchingLineCount (Join-Path $Lite 'AGENTS.md') 'mode: lite') 1
-Assert-Eq 'lite AGENTS.md holds one section per standard' `
-    (Get-MatchingLineCount (Join-Path $Lite 'AGENTS.md') '^### ') $SrcStandards
+# Bare lite is the core rules and the universal standards: no stack is included
+# unless it is named.
+Assert-Eq 'lite AGENTS.md holds one section per universal standard' `
+    (Get-MatchingLineCount (Join-Path $Lite 'AGENTS.md') '^### ') ($SrcStandards - $SrcStacked)
 Assert-Refused 'lite refuses adapters' `
     (Invoke-Child $Build @('-OutputRoot', (Join-Path $Work 'lite-x'), '-Lite', '-Adapters', 'claude'))
 
-$LiteAny = Join-Path $Work 'lite-any'
-Invoke-Build @{ OutputRoot = $LiteAny; Lite = $true; Stacks = 'any' }
+$LiteStack = Join-Path $Work 'lite-stack'
+Invoke-Build @{ OutputRoot = $LiteStack; Lite = $true; Stacks = 'dotnet,unreal' }
 $dotnetPattern = '^### (' + (($DotnetNames | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')'
-Assert-Eq 'lite respects stack filtering' `
-    (Get-MatchingLineCount (Join-Path $LiteAny 'AGENTS.md') $dotnetPattern) 0
+$givenPattern = '^### (' + ((($DotnetNames + $UnrealNames) | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')'
+Assert-Eq 'lite includes the stacks it is given' `
+    (Get-MatchingLineCount (Join-Path $LiteStack 'AGENTS.md') $givenPattern) ($DotnetNames.Count + $UnrealNames.Count)
+Assert-Eq 'lite includes no stack it is not given' `
+    (Get-MatchingLineCount (Join-Path $LiteStack 'AGENTS.md') '^### ') `
+    ($SrcStandards - $SrcStacked + $DotnetNames.Count + $UnrealNames.Count)
 
 $LiteInst = Join-Path $Work 'lite-inst'
 Invoke-Install @{ Target = $LiteInst; Yes = $true; Lite = $true }
 Assert-Eq 'lite install root is AGENTS.md only' (Get-RootEntries $LiteInst) 'AGENTS.md'
+
+# A detected stack is not added to a lite install; it has to be named.
+$LiteProj = Join-Path $Work 'lite-proj'
+$LiteProjStack = Join-Path $Work 'lite-proj-stack'
+Set-Text (Join-Path $LiteProj 'App.csproj') ''
+Set-Text (Join-Path $LiteProjStack 'App.csproj') ''
+Invoke-Install @{ Target = $LiteProj; Yes = $true; Lite = $true }
+Assert-Eq 'a lite install ignores the detected stacks' `
+    (Get-MatchingLineCount (Join-Path $LiteProj 'AGENTS.md') $dotnetPattern) 0
+Invoke-Install @{ Target = $LiteProjStack; Yes = $true; Lite = $true; Stacks = 'dotnet' }
+Assert-Eq 'a lite install includes the stacks it is given' `
+    (Get-MatchingLineCount (Join-Path $LiteProjStack 'AGENTS.md') $dotnetPattern) $DotnetNames.Count
 Assert-Code '--check regenerates a lite install as lite' 0 `
     (Invoke-Script $Install @{ Target = $LiteInst; Check = $true })
 
@@ -658,8 +691,8 @@ if ($Manifest) {
     foreach ($name in (Get-OrdinalSorted $script:TestNames.ToArray())) { $lines.Add("test  $name") }
 
     $trees = 'def', 'adapters', 'userpath', 's-any', 's-dotnet', 'proj-dotnet', 'proj-python',
-        'proj-godot', 'proj-godot-cs', 'inst-claude', 'inst-copilot',
-        'lite', 'lite-any', 'lite-inst', 'lite-conv', 'up'
+        'proj-godot', 'proj-godot-cs', 'proj-unreal', 'inst-claude', 'inst-copilot',
+        'lite', 'lite-stack', 'lite-inst', 'lite-proj', 'lite-proj-stack', 'lite-conv', 'up'
     foreach ($tree in $trees) {
         $root = Join-Path $Work $tree
         $hashes = @{}

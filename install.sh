@@ -22,10 +22,13 @@
 #   --adapters LIST  Add tool-specific directories: claude,copilot,hooks,all,none
 #                    (default: none). Passing this skips the prompt.
 #   --stacks LIST    Which stacks to install: all, any, dotnet, python, rust, c-cpp,
-#                    node, go. Default: detected from the target project.
+#                    node, go, godot, unreal. Default: detected from the target
+#                    project.
 #   --lite           Install a single AGENTS.md for small-context local models:
-#                    core rules plus each standard's checklist, inline. No
-#                    skills tree, no adapters.
+#                    core rules plus the checklist of each universal standard,
+#                    inline. No skills tree, no adapters, no detected stacks.
+#   --lite=LIST      The same, plus the standards of the listed stacks
+#                    (--lite=dotnet,unreal). Same as --lite --stacks LIST.
 #   --check          Report whether an existing install matches the current
 #                    standards. Writes nothing. Exit 1 if it is out of date.
 #   --upgrade        Bring an existing install to the current layout: infer what
@@ -74,10 +77,12 @@ while [ $# -gt 0 ]; do
         --check) CHECK=1 ;;
         --upgrade) UPGRADE=1 ;;
         --lite) LITE=1; LITE_EXPLICIT=1 ;;
+        --lite=*) LITE=1; LITE_EXPLICIT=1; STACKS="${1#--lite=}"; STACKS_EXPLICIT=1
+                  [ -n "$STACKS" ] || { echo "--lite= needs a stack list" >&2; exit 2; } ;;
         -y|--yes) ASSUME_YES=1 ;;
         --force) FORCE=1 ;;
         --dry-run) DRY_RUN=1 ;;
-        -h|--help) sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) echo "Unknown option: $1" >&2; exit 2 ;;
         *) [ -z "$TARGET" ] || { echo "Unexpected argument: $1" >&2; exit 2; }; TARGET="$1" ;;
     esac
@@ -95,6 +100,12 @@ if [ "$CHECK" -eq 1 ] && [ "$UPGRADE" -eq 1 ]; then
 fi
 if [ "$LITE" -eq 1 ] && [ "$ADAPTERS_EXPLICIT" -eq 1 ] && [ "$ADAPTERS" != "none" ]; then
     echo "--lite installs a single AGENTS.md; adapters do not apply." >&2; exit 2
+fi
+# Asking for lite without naming stacks means the core rules and the universal
+# standards: detected stacks are not added, and neither are the stacks a full
+# install being converted was stamped with.
+if [ "$LITE_EXPLICIT" -eq 1 ] && [ "$STACKS_EXPLICIT" -eq 0 ]; then
+    STACKS="any"; STACKS_EXPLICIT=1
 fi
 # An upgrade replaces the files it manages by definition, so asking again for
 # --force would only be a way to get it half done.
@@ -197,40 +208,55 @@ detect_tool() {
 # repository never receives .NET rules. Marker files are searched a few levels
 # deep, because projects commonly sit under src/.
 
+# Every stack a standard can be scoped to, in the order the stamp records them
+# and the prompt offers them. Mirrors $KnownStacks in install.ps1.
+KNOWN_STACKS="dotnet python rust c-cpp node go godot unreal"
+
 detect_stacks() {
     ds_found=""
     ds_add() { case " $ds_found " in *" $1 "*) ;; *) ds_found="$ds_found $1" ;; esac; }
 
     # One find for every marker rather than one per marker: process creation is
     # expensive on Windows, and one spawn beats seventeen.
-    ds_all=$(find "$DESTINATION" -maxdepth 3 \( -name node_modules -o -name .git \) -prune -o \
+    ds_all=$(find "$DESTINATION" -maxdepth 3 \( -name node_modules -o -name .git -o -name Intermediate \) -prune -o \
         -type f \( -name '*.sln' -o -name '*.slnx' -o -name '*.csproj' -o -name '*.fsproj' \
         -o -name '*.vbproj' -o -name 'global.json' -o -name 'pyproject.toml' \
         -o -name 'setup.py' -o -name 'requirements.txt' -o -name 'Pipfile' \
         -o -name 'Cargo.toml' -o -name 'CMakeLists.txt' -o -name '*.vcxproj' \
         -o -name 'meson.build' -o -name 'package.json' -o -name 'go.mod' \
-        -o -name 'project.godot' \) -print 2>/dev/null)
+        -o -name 'project.godot' -o -name '*.uproject' -o -name '*.uplugin' \) -print 2>/dev/null)
 
+    # Unreal generates a .sln and .vcxproj files for its own build tool. In an
+    # Unreal project they say nothing about the stack, so they are held back
+    # and counted only when no Unreal marker turns up.
+    ds_gen=""
     while IFS= read -r ds_f; do
         [ -n "$ds_f" ] || continue
         case "${ds_f##*/}" in
-            *.sln|*.slnx|*.csproj|*.fsproj|*.vbproj|global.json)  ds_add dotnet ;;
+            *.sln)                                                ds_gen="$ds_gen dotnet" ;;
+            *.vcxproj)                                            ds_gen="$ds_gen c-cpp" ;;
+            *.slnx|*.csproj|*.fsproj|*.vbproj|global.json)        ds_add dotnet ;;
             pyproject.toml|setup.py|requirements.txt|Pipfile)     ds_add python ;;
             Cargo.toml)                                           ds_add rust ;;
-            CMakeLists.txt|*.vcxproj|meson.build)                 ds_add c-cpp ;;
+            CMakeLists.txt|meson.build)                           ds_add c-cpp ;;
             package.json)                                         ds_add node ;;
             go.mod)                                               ds_add go ;;
             project.godot)                                        ds_add godot ;;
+            *.uproject|*.uplugin)                                 ds_add unreal ;;
         esac
     done <<DSEOF
 $ds_all
 DSEOF
+    case " $ds_found " in
+        *" unreal "*) ;;
+        *) for ds_g in $ds_gen; do ds_add "$ds_g"; done ;;
+    esac
 
     # Emitted in the fixed order the checks once ran in, so the recorded stack
     # stamp does not depend on filesystem traversal order and agrees with
     # Get-ProjectStacks in install.ps1.
     ds_ordered=""
-    for ds_s in dotnet python rust c-cpp node go godot; do
+    for ds_s in $KNOWN_STACKS; do
         case " $ds_found " in *" $ds_s "*) ds_ordered="$ds_ordered $ds_s" ;; esac
     done
     echo "$ds_ordered" | sed 's/^ //'
@@ -272,9 +298,44 @@ if [ "$STACKS_EXPLICIT" -eq 0 ]; then
             [ "$INSPECT" -eq 1 ] || printf 'Detected stacks: %s\n\n' \
                 "$(echo "$DETECTED_STACKS" | tr ' ' ',' | sed 's/,/, /g')"
             STACKS=$(echo "$DETECTED_STACKS" | tr ' ' ',')
+        elif [ "$INSPECT" -eq 0 ] && [ "$ASSUME_YES" -eq 0 ] && [ -r /dev/tty ] && [ -t 0 ]; then
+            # Nothing identifies the project, so guessing would install either
+            # too little or the wrong rules. Ask.
+            echo "No stack markers found, so the project type is unknown. Stacks:"
+            echo ""
+            st_idx=0
+            for st_s in $KNOWN_STACKS; do
+                st_idx=$((st_idx + 1))
+                printf '  %s) %s\n' "$st_idx" "$st_s"
+            done
+            echo ""
+            printf "Which apply? Numbers separated by spaces, a for all, or Enter for universal standards only: "
+            st_reply=""
+            read -r st_reply < /dev/tty || st_reply=""
+            st_reply=$(echo "$st_reply" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+            case "$st_reply" in
+                "") STACKS="any" ;;
+                a|A|all) STACKS="all" ;;
+                *)
+                    st_picked=""
+                    for st_num in $(echo "$st_reply" | tr ',' ' '); do
+                        case "$st_num" in
+                            *[!0-9]*) echo "Not a number: $st_num" >&2; exit 2 ;;
+                        esac
+                        st_name=$(echo "$KNOWN_STACKS" | tr ' ' '\n' | sed -n "${st_num}p")
+                        [ -n "$st_name" ] || { echo "No such option: $st_num" >&2; exit 2; }
+                        st_picked="$st_picked $st_name"
+                    done
+                    [ -n "$st_picked" ] || { echo "Nothing selected." >&2; exit 2; }
+                    STACKS=$(echo "$st_picked" | sed 's/^ //' | tr ' ' ',')
+                    ;;
+            esac
+            echo ""
         else
             if [ "$INSPECT" -eq 0 ]; then
                 echo "No stack markers found. Installing universal standards only."
+                echo "Pass --stacks LIST to choose the stacks."
                 echo ""
             fi
             STACKS="any"

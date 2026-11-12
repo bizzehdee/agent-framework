@@ -15,7 +15,7 @@ installer writes, with no wrapping folder.
 |---|---|---|
 | `agent-framework-X.Y.Z-generic.zip` | Codex, Cursor, Copilot, OpenCode, Gemini CLI, or any tool that reads `AGENTS.md` | `AGENTS.md` + `.agents/skills/` |
 | `agent-framework-X.Y.Z-claude.zip` | Claude Code | the generic contents + `.claude/skills/` |
-| `agent-framework-X.Y.Z-generic-lite.zip` | a local model or a small context window | a single `AGENTS.md` |
+| `agent-framework-X.Y.Z-generic-lite.zip` | a local model or a small context window | a single `AGENTS.md` with the core rules |
 
 With the GitHub CLI, from your project's root:
 
@@ -32,10 +32,12 @@ On Windows, extract with `Expand-Archive agent-framework-*-generic.zip .` instea
 If you run a local model, or any model with a small context window, use the
 `generic-lite` package. The full packages rely on the model loading a standard
 on demand when its trigger matches, which small models (9B to 12B, or a
-27B-class MoE with a 128k window) do not do reliably. Lite puts every rule in
-one always-on `AGENTS.md` of roughly 5k tokens, with nothing else to load.
+27B-class MoE with a 128k window) do not do reliably. Lite puts the core rules
+in one always-on `AGENTS.md` of roughly 4k tokens, with nothing else to load.
+It carries no language or framework rules; to add them, run the installer with
+`--lite=LIST` as described under [Lite](#lite-small-local-models).
 
-The packages hold the standards for every stack. For an install filtered to
+The full packages hold the standards for every stack. For an install filtered to
 your project's stacks, or to update an existing install, use the
 [installer](#install).
 
@@ -85,7 +87,8 @@ To migrate an install made by an earlier version, see
 |---|---|
 | `--stacks LIST` / `-Stacks` | Which stacks to install. Default: detected. |
 | `--adapters LIST` / `-Adapters` | Add tool-specific directories. Default: none. |
-| `--lite` / `-Lite` | One always-on `AGENTS.md` for small local models. No skills tree, no adapters. |
+| `--lite` / `-Lite` | One always-on `AGENTS.md` of core rules for small local models. No skills tree, no adapters, no stacks. |
+| `--lite=LIST` / `-Lite -Stacks LIST` | The same, plus the standards of the listed stacks. |
 | `--check` / `-Check` | Report whether an install is current. Writes nothing. |
 | `--upgrade` / `-Upgrade` | Migrate an existing install to the current layout. Implies `--force`. |
 | `--yes` / `-Yes` | Accept defaults, no prompt. |
@@ -126,12 +129,25 @@ words. `--lite` installs one always-on file instead:
 ./install.sh /path/to/project --lite
 ```
 
-It writes a single `AGENTS.md` holding the ten non-negotiables plus each
-standard's checklist as imperative rules, stack-filtered as usual. The file is
-roughly 5k tokens for every stack, and less once filtered. A lite install has
+It writes a single `AGENTS.md` holding the core rules: the ten non-negotiables
+plus the checklist of each universal standard as imperative rules, roughly 4k
+tokens. No language or framework standard is included, and a detected stack is
+not added. Name the stacks you want:
+
+```bash
+./install.sh /path/to/project --lite=dotnet,unreal
+```
+
+```powershell
+./install.ps1 /path/to/project -Lite -Stacks dotnet,unreal
+```
+
+`--lite=LIST` is the same as `--lite --stacks LIST`, and `--lite=all` includes
+every stack at roughly 8k tokens. A lite install has
 no skills tree, and the installer refuses adapters with it. `--check` and
 `--upgrade` read the mode from the stamp, so a lite install stays lite.
-`--upgrade --lite` converts a full install and prunes the skills tree.
+`--upgrade --lite` converts a full install to the core rules and prunes the
+skills tree; `--upgrade --lite=LIST` keeps the stacks you name.
 
 ## Stack scoping
 
@@ -150,10 +166,19 @@ Detection looks for marker files up to three levels deep:
 | `package.json` | `node` |
 | `go.mod` | `go` |
 | `project.godot` | `godot` |
+| `*.uproject`, `*.uplugin` | `unreal` |
 
 A Godot C# project also has a `.csproj`, so it receives both `godot` and
-`dotnet`. Override detection with `--stacks`, or pass `--stacks any` for the
+`dotnet`. An Unreal project receives `unreal` alone: the `.sln` and `.vcxproj`
+files Unreal generates do not count, and neither does anything under
+`Intermediate/`. The general `c-cpp` standards are left out on purpose, because
+Unreal garbage-collects its objects and bans exceptions and the standard
+containers. Override detection with `--stacks`, or pass `--stacks any` for the
 universal standards only.
+
+When no marker is found, the project type is unknown, and the installer asks
+which stacks apply. With `-y`, or when it is not run from a terminal, it
+installs the universal standards only and says so.
 
 ## Optional adapters
 
@@ -321,6 +346,10 @@ Universal (`stack: any`):
 | Standard | Covers |
 |---|---|
 | `memory-and-resource-safety` | RAII and ownership, bounded buffers, undefined behaviour, warnings as errors, sanitisers. |
+| `cpp-build-and-toolchain` | Target-based CMake, a declared language standard, presets as the one way to build, pinned dependencies. |
+| `cpp-undefined-behaviour` | Dangling references and lambda captures, moved-from objects, integer conversions, casts and type punning, initialisation order. |
+| `cpp-headers-and-interfaces` | Self-contained headers, the one definition rule, rule of zero or five, `explicit`, const-correctness, parameter passing. |
+| `cpp-concurrency` | Guarded shared state, RAII locks in one order, joined threads with a stop path, atomics, ThreadSanitizer. |
 
 `stack: godot` (Godot 4, GDScript and C#):
 
@@ -329,6 +358,16 @@ Universal (`stack: any`):
 | `godot-project-files` | Engine version check, hand-editing `.tscn`/`.tres`, `.uid` and `.import` sidecars, export secrets, headless validation. |
 | `godot-scripting` | Static typing, naming and member order, Godot 4 signals, exports, C# partial classes and generated names. |
 | `godot-scene-architecture` | Call down and signal up, autoload discipline, shared resources, the frame loop, main-thread rule, freeing, multiplayer authority. |
+
+`stack: unreal` (Unreal Engine C++):
+
+| Standard | Covers |
+|---|---|
+| `unreal-project-files` | Binary assets an agent cannot edit, what to commit, LFS and locking, core redirects, config ini files, building to validate. |
+| `unreal-cpp-conventions` | Engine version check, type prefixes, reflection macros, engine containers and strings, no exceptions or RTTI, logging, `Build.cs` dependencies. |
+| `unreal-object-lifetime` | `UPROPERTY` on every stored object pointer, weak and soft references, `NewObject` over `new`, validity checks. |
+| `unreal-gameplay-architecture` | The C++ and Blueprint split, framework class roles, components and subsystems, tick off by default, lifecycle. |
+| `unreal-replication` | Server authority, replicated properties and `OnRep`, RPC kinds, validating everything a client sends. |
 
 `_core.md` holds the ten non-negotiables. The build injects it inline into
 `AGENTS.md` and never emits it as a skill, because these rules must apply before

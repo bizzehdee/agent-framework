@@ -27,7 +27,9 @@ words only where they remove ambiguity.
 
 Every standard ends with a `## Checklist` of `- [ ]` items. The lite build
 (`--lite`) inlines a standard as its checklist, so a standard without one would
-silently vanish from lite installs; the suite enforces it.
+silently vanish from lite installs; the suite enforces it. Bare `--lite` takes
+the universal (`stack: any`) standards only, so every checklist item added to
+one of those is paid for by every small-model install.
 
 Frontmatter is single-line `key: value` pairs, hand-parsed, so there is no YAML
 dependency:
@@ -118,8 +120,13 @@ map the old name to the new one explicitly rather than loosening the rule.
 
 ## Adding a stack
 
-Add its marker files to `Get-ProjectStacks` / `detect_stacks`, then set `stack:` on
-the standards that apply.
+Add its marker files to `Get-ProjectStacks` / `detect_stacks` and its name to
+`$KnownStacks` / `KNOWN_STACKS`, then set `stack:` on the standards that apply.
+The known-stacks list fixes the order of the stamp and is what the installer
+offers when it finds no marker.
+
+A lite build includes a stack only when it is named (`--lite=LIST`), so a new
+stack needs nothing extra there.
 
 ## Cross-shell parity
 
@@ -182,14 +189,15 @@ git push origin release/1.2.0
 ```
 
 The `Release` workflow runs the sh suite, then attaches three packages. Each is
-exactly what `install.sh` writes into an empty project with `--stacks all`, so
-extracting one into a project root is the same as installing there:
+exactly what `install.sh` writes into an empty project, with `--stacks all` for
+the two full packages, so extracting one into a project root is the same as
+installing there:
 
 | Package | Installed with | Contents |
 |---|---|---|
 | `agent-framework-X.Y.Z-generic.zip` | no adapters | `AGENTS.md` + `.agents/skills/` |
 | `agent-framework-X.Y.Z-claude.zip` | `--adapters claude` | the generic contents + `.claude/skills/` pointers |
-| `agent-framework-X.Y.Z-generic-lite.zip` | `--lite` | a single `AGENTS.md` |
+| `agent-framework-X.Y.Z-generic-lite.zip` | `--lite` | a single `AGENTS.md` with the core rules, no stacks |
 
 Each archive has no wrapping folder, and `--check` and `--upgrade` work on the
 extracted files as on any install. A

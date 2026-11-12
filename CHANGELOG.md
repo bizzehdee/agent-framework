@@ -8,6 +8,15 @@ what sits between them. Dates are the day the change landed on `main`.
 
 ### Added
 
+- `unreal` stack, detected from `*.uproject` or `*.uplugin`, with five
+  standards: `unreal-project-files`, `unreal-cpp-conventions`,
+  `unreal-object-lifetime`, `unreal-gameplay-architecture`, and
+  `unreal-replication`. An Unreal project receives `unreal` alone: the `.sln`
+  and `.vcxproj` files it generates no longer count as `dotnet` or `c-cpp`.
+- Four more `c-cpp` standards: `cpp-build-and-toolchain`,
+  `cpp-undefined-behaviour`, `cpp-headers-and-interfaces`, and
+  `cpp-concurrency`.
+
 - Release workflow: a `release/X.Y.Z` tag publishes a GitHub release with
   prebuilt `generic`, `claude`, and `generic-lite` zip packages attached.
 
@@ -16,9 +25,9 @@ what sits between them. Dates are the day the change landed on `main`.
   `pgrep -f` loop spin forever and a `pkill -f` kill its own shell.
 
 - `--lite` on build and install: one always-on `AGENTS.md` for small-context
-  local models — the core rules plus each standard's checklist as rules, ~5k
-  tokens for all stacks. No skills tree, no adapters; `--check` and `--upgrade`
-  keep the mode, and `--upgrade --lite` converts a full install.
+  local models — the core rules plus each standard's checklist as rules. No
+  skills tree, no adapters; `--check` and `--upgrade` keep the mode, and
+  `--upgrade --lite` converts a full install.
 - Every standard now ends with a checklist (four gained one); the lite build
   derives from it and the suite enforces it.
 - `technical-writing` gains "Reading like a person wrote it": rules against
@@ -42,6 +51,16 @@ what sits between them. Dates are the day the change landed on `main`.
   (bash 3.2) as well as Linux and Windows.
 
 ### Changed
+
+- `--lite` is now the core rules only: the non-negotiables plus the universal
+  standards, about 4k tokens. It no longer adds detected stacks. Name the
+  stacks to include with `--lite=LIST` (`-Lite -Stacks LIST` in PowerShell).
+  An existing lite install keeps its stamped stacks on `--upgrade`. The
+  `generic-lite` release package now holds the core rules only.
+- Stack detection skips `Intermediate/` directories.
+- When no stack marker is found, the installer asks which stacks apply instead
+  of silently installing the universal standards only. With `-y` or without a
+  terminal it still falls back to the universal standards.
 
 - Testing is split by platform. `test.sh` tests the sh scripts on Linux and
   macOS; the new `test.ps1` tests the PowerShell scripts natively on Windows

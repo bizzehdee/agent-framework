@@ -25,8 +25,11 @@
 #                       (default: .agents/skills). A user-level install passes
 #                       ~/.agents/skills, because there is no project root.
 #   --lite              Emit a single AGENTS.md for small-context local models:
-#                       the core rules plus each standard's checklist, inline.
-#                       No skills tree, and adapters are refused.
+#                       the core rules plus the checklist of each universal
+#                       standard, inline. No skills tree, and adapters are
+#                       refused. No stack-scoped standard is included.
+#   --lite=LIST         The same, plus the standards of the listed stacks
+#                       (--lite=dotnet,unreal). Same as --lite --stacks LIST.
 #   -h, --help          Show this help.
 
 set -eu
@@ -38,20 +41,27 @@ ADAPTERS="none"
 STACKS="all"
 SKILLS_PATH=".agents/skills"
 LITE=0
+STACKS_SET=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --out) shift; [ $# -gt 0 ] || { echo "--out needs a directory" >&2; exit 2; }; OUTPUT_ROOT="$1" ;;
         --adapters) shift; [ $# -gt 0 ] || { echo "--adapters needs a value" >&2; exit 2; }; ADAPTERS="$1" ;;
-        --stacks) shift; [ $# -gt 0 ] || { echo "--stacks needs a value" >&2; exit 2; }; STACKS="$1" ;;
+        --stacks) shift; [ $# -gt 0 ] || { echo "--stacks needs a value" >&2; exit 2; }
+                  STACKS="$1"; STACKS_SET=1 ;;
         --skills-path) shift; [ $# -gt 0 ] || { echo "--skills-path needs a value" >&2; exit 2; }
                        SKILLS_PATH=$(echo "$1" | sed 's|/*$||') ;;
         --lite) LITE=1 ;;
-        -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --lite=*) LITE=1; STACKS="${1#--lite=}"; STACKS_SET=1
+                  [ -n "$STACKS" ] || { echo "--lite= needs a stack list" >&2; exit 2; } ;;
+        -h|--help) sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
     shift
 done
+
+# Lite is the core rules and the universal standards unless stacks are named.
+if [ "$LITE" -eq 1 ] && [ "$STACKS_SET" -eq 0 ]; then STACKS="any"; fi
 
 [ -d "$STANDARDS_DIR" ] || { echo "Source directory not found: $STANDARDS_DIR" >&2; exit 1; }
 [ -n "$OUTPUT_ROOT" ] || { echo "Usage: ./build.sh --out DIR [--adapters LIST]" >&2; exit 2; }

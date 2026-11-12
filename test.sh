@@ -224,6 +224,11 @@ GODOT_PATTERN=$(grep -l '^stack: godot' "$REPO_ROOT"/standards/*.md |
     sed 's|.*/||; s|\.md$||' | tr '\n' '|' | sed 's/|$//')
 PYTHON_PATTERN=$(grep -l '^stack: python' "$REPO_ROOT"/standards/*.md |
     sed 's|.*/||; s|\.md$||' | tr '\n' '|' | sed 's/|$//')
+SRC_UNREAL=$(grep -l '^stack: unreal' "$REPO_ROOT"/standards/*.md | wc -l | tr -d ' ')
+UNREAL_PATTERN=$(grep -l '^stack: unreal' "$REPO_ROOT"/standards/*.md |
+    sed 's|.*/||; s|\.md$||' | tr '\n' '|' | sed 's/|$//')
+CPP_PATTERN=$(grep -l '^stack: c-cpp' "$REPO_ROOT"/standards/*.md |
+    sed 's|.*/||; s|\.md$||' | tr '\n' '|' | sed 's/|$//')
 
 sh_build --out "$WORK/def"
 assert_eq 'default build root is AGENTS.md + .agents' \
@@ -381,6 +386,20 @@ assert_eq 'a C# Godot project receives the godot and dotnet standards' \
 assert_eq 'a .NET project receives no python standards' \
     "$(ls "$WORK/proj-dotnet/.agents/skills" | grep -c -E "$PYTHON_PATTERN")" '0'
 
+# Unreal generates a .sln and .vcxproj files; neither makes the project .NET or
+# general C++.
+mkdir -p "$WORK/proj-unreal/Intermediate/ProjectFiles"
+: > "$WORK/proj-unreal/Game.uproject"
+: > "$WORK/proj-unreal/Game.sln"
+: > "$WORK/proj-unreal/Game.vcxproj"
+: > "$WORK/proj-unreal/Intermediate/ProjectFiles/Game.csproj"
+
+sh_install "$WORK/proj-unreal" -y
+assert_eq 'an Unreal project receives the unreal standards' \
+    "$(ls "$WORK/proj-unreal/.agents/skills" | grep -c -E "$UNREAL_PATTERN")" "$SRC_UNREAL"
+assert_eq 'an Unreal project ignores its generated project files' \
+    "$(ls "$WORK/proj-unreal/.agents/skills" | grep -c -E "$DOTNET_PATTERN|$CPP_PATTERN")" '0'
+
 # --- 9. Install behaviour ------------------------------------------------
 
 section '9. Install behaviour'
@@ -473,17 +492,34 @@ sh_build --out "$WORK/lite" --lite
 assert_eq 'lite build root is AGENTS.md only' "$(root_entries "$WORK/lite")" 'AGENTS.md '
 assert_eq 'lite AGENTS.md is stamped with its mode' \
     "$(grep -c 'mode: lite' "$WORK/lite/AGENTS.md")" '1'
-assert_eq 'lite AGENTS.md holds one section per standard' \
-    "$(grep -c '^### ' "$WORK/lite/AGENTS.md")" "$SRC_STANDARDS"
+# Bare lite is the core rules and the universal standards: no stack is included
+# unless it is named.
+assert_eq 'lite AGENTS.md holds one section per universal standard' \
+    "$(grep -c '^### ' "$WORK/lite/AGENTS.md")" "$((SRC_STANDARDS - SRC_STACKED))"
 assert_exit 'lite refuses adapters' 2 \
     sh "$REPO_ROOT/build.sh" --out "$WORK/lite-x" --lite --adapters claude
 
-sh_build --out "$WORK/lite-any" --lite --stacks any
-assert_eq 'lite respects stack filtering' \
-    "$(grep -c -E "^### ($DOTNET_PATTERN)" "$WORK/lite-any/AGENTS.md")" '0'
+sh_build --out "$WORK/lite-stack" --lite=dotnet,unreal
+assert_eq 'lite includes the stacks it is given' \
+    "$(grep -c -E "^### ($DOTNET_PATTERN|$UNREAL_PATTERN)" "$WORK/lite-stack/AGENTS.md")" \
+    "$((SRC_DOTNET + SRC_UNREAL))"
+assert_eq 'lite includes no stack it is not given' \
+    "$(grep -c '^### ' "$WORK/lite-stack/AGENTS.md")" \
+    "$((SRC_STANDARDS - SRC_STACKED + SRC_DOTNET + SRC_UNREAL))"
 
 sh_install "$WORK/lite-inst" -y --lite
 assert_eq 'lite install root is AGENTS.md only' "$(root_entries "$WORK/lite-inst")" 'AGENTS.md '
+
+# A detected stack is not added to a lite install; it has to be named.
+mkdir -p "$WORK/lite-proj" "$WORK/lite-proj-stack"
+: > "$WORK/lite-proj/App.csproj"
+: > "$WORK/lite-proj-stack/App.csproj"
+sh_install "$WORK/lite-proj" -y --lite
+assert_eq 'a lite install ignores the detected stacks' \
+    "$(grep -c -E "^### ($DOTNET_PATTERN)" "$WORK/lite-proj/AGENTS.md")" '0'
+sh_install "$WORK/lite-proj-stack" -y --lite=dotnet
+assert_eq 'a lite install includes the stacks it is given' \
+    "$(grep -c -E "^### ($DOTNET_PATTERN)" "$WORK/lite-proj-stack/AGENTS.md")" "$SRC_DOTNET"
 assert_exit '--check regenerates a lite install as lite' 0 \
     sh "$REPO_ROOT/install.sh" "$WORK/lite-inst" --check
 
@@ -572,8 +608,8 @@ if [ -n "$MANIFEST" ]; then
     {
         LC_ALL=C sort "$WORK/test-names" | sed 's/^/test  /'
         for tree in def adapters userpath s-any s-dotnet proj-dotnet proj-python \
-                    proj-godot proj-godot-cs inst-claude inst-copilot \
-                    lite lite-any lite-inst lite-conv up; do
+                    proj-godot proj-godot-cs proj-unreal inst-claude inst-copilot \
+                    lite lite-stack lite-inst lite-proj lite-proj-stack lite-conv up; do
             # shellcheck disable=SC2086
             # Some sha256sum builds mark binary mode as " *path"; normalise to the
             # two-space form so the line is the same on every platform.

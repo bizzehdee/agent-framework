@@ -41,12 +41,13 @@ jobs:
       # --stacks all is explicit: an empty directory has no stack markers, and
       # detection would otherwise install the universal standards only. The
       # descriptions are stack-scoped, so a .NET standard does not trigger in a
-      # Python project.
+      # Python project. Lite is always on, so it ships the core rules alone;
+      # --lite=LIST adds stacks for anyone who runs the installer.
       - name: Install into the package directories
         run: |
           sh ./install.sh dist/generic -y --stacks all
           sh ./install.sh dist/claude -y --stacks all --adapters claude
-          sh ./install.sh dist/generic-lite -y --stacks all --lite
+          sh ./install.sh dist/generic-lite -y --lite
 
       # Each archive unpacks straight into a project root: AGENTS.md and the
       # dot-directories sit at the top level, with no wrapping folder.

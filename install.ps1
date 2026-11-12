@@ -42,7 +42,9 @@
 
 .PARAMETER Lite
     Install a single AGENTS.md for small-context local models: core rules plus
-    each standard's checklist, inline. No skills tree, no adapters.
+    the checklist of each universal standard, inline. No skills tree, no
+    adapters, and no detected stacks. Add stacks by naming them:
+    -Lite -Stacks dotnet,unreal.
 
 .PARAMETER Yes
     Accept the defaults without prompting.
@@ -244,6 +246,10 @@ function Find-Tool {
 # repository never receives .NET rules. Marker files are searched a few levels
 # deep, because projects commonly sit under src/.
 
+# Every stack a standard can be scoped to, in the order the stamp records them
+# and the prompt offers them. Mirrors KNOWN_STACKS in install.sh.
+$KnownStacks = 'dotnet', 'python', 'rust', 'c-cpp', 'node', 'go', 'godot', 'unreal'
+
 function Get-ProjectStacks {
     $markers = [ordered]@{
         dotnet = '*.sln', '*.slnx', '*.csproj', '*.fsproj', '*.vbproj', 'global.json'
@@ -253,22 +259,42 @@ function Get-ProjectStacks {
         node   = 'package.json'
         go     = 'go.mod'
         godot  = 'project.godot'
+        unreal = '*.uproject', '*.uplugin'
     }
+
+    function Test-Marker([string]$Pattern) {
+        $hit = Get-ChildItem -Path $destination -Filter $Pattern -Depth 2 -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '[\\/](node_modules|\.git|Intermediate)[\\/]' } |
+            Select-Object -First 1
+        return [bool]$hit
+    }
+
+    # Unreal generates a .sln and .vcxproj files for its own build tool. In an
+    # Unreal project they say nothing about the stack, so they do not count.
+    $isUnreal = $false
+    foreach ($pattern in $markers['unreal']) { if (Test-Marker $pattern) { $isUnreal = $true; break } }
+    $generated = '*.sln', '*.vcxproj'
 
     $found = [System.Collections.Generic.List[string]]::new()
     foreach ($stack in $markers.Keys) {
+        if ($stack -eq 'unreal') { if ($isUnreal) { $found.Add($stack) }; continue }
         foreach ($pattern in $markers[$stack]) {
-            $hit = Get-ChildItem -Path $destination -Filter $pattern -Depth 2 -File -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -notmatch '[\\/](node_modules|\.git)[\\/]' } |
-                Select-Object -First 1
-            if ($hit) { $found.Add($stack); break }
+            if ($isUnreal -and $generated -contains $pattern) { continue }
+            if (Test-Marker $pattern) { $found.Add($stack); break }
         }
     }
     return $found
 }
 
 $stacksExplicit = $PSBoundParameters.ContainsKey('Stacks')
-if ($stacksExplicit) {
+if ($liteExplicit -and $Lite -and -not $stacksExplicit) {
+    # Asking for lite without naming stacks means the core rules and the
+    # universal standards: detected stacks are not added, and neither are the
+    # stacks a full install being converted was stamped with.
+    $stackList = 'any'
+    $stacksExplicit = $true
+}
+elseif ($stacksExplicit) {
     $stackList = (@($Stacks -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })) -join ','
 }
 elseif ($User) {
@@ -288,9 +314,40 @@ else {
         }
         $stackList = $projectStacks -join ','
     }
+    elseif (-not $inspect -and -not $Yes -and -not [Console]::IsInputRedirected) {
+        # Nothing identifies the project, so guessing would install either too
+        # little or the wrong rules. Ask.
+        Write-Host 'No stack markers found, so the project type is unknown. Stacks:'
+        Write-Host ''
+        for ($i = 0; $i -lt $KnownStacks.Count; $i++) {
+            Write-Host ('  {0}) {1}' -f ($i + 1), $KnownStacks[$i])
+        }
+        Write-Host ''
+        $reply = (Read-Host 'Which apply? Numbers separated by spaces, a for all, or Enter for universal standards only').Trim()
+
+        if ($reply -eq '') { $stackList = 'any' }
+        elseif ($reply -in 'a', 'A', 'all') { $stackList = 'all' }
+        else {
+            $picked = [System.Collections.Generic.List[string]]::new()
+            foreach ($num in ($reply -split '[\s,]+' | Where-Object { $_ })) {
+                if ($num -notmatch '^\d+$') {
+                    [Console]::Error.WriteLine("Not a number: $num"); exit 2
+                }
+                $index = [int]$num
+                if ($index -lt 1 -or $index -gt $KnownStacks.Count) {
+                    [Console]::Error.WriteLine("No such option: $num"); exit 2
+                }
+                $picked.Add($KnownStacks[$index - 1])
+            }
+            if ($picked.Count -eq 0) { [Console]::Error.WriteLine('Nothing selected.'); exit 2 }
+            $stackList = $picked -join ','
+        }
+        Write-Host ''
+    }
     else {
         if (-not $inspect) {
             Write-Host 'No stack markers found. Installing universal standards only.'
+            Write-Host 'Pass -Stacks LIST to choose the stacks.'
             Write-Host ''
         }
         $stackList = 'any'
