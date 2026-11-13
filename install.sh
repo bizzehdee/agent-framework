@@ -22,8 +22,8 @@
 #   --adapters LIST  Add tool-specific directories: claude,copilot,hooks,all,none
 #                    (default: none). Passing this skips the prompt.
 #   --stacks LIST    Which stacks to install: all, any, dotnet, python, rust, c-cpp,
-#                    node, go, godot, unreal. Default: detected from the target
-#                    project.
+#                    node, go, godot, unreal, java, kotlin, android. Default:
+#                    detected from the target project.
 #   --lite           Install a single AGENTS.md for small-context local models:
 #                    core rules plus the checklist of each universal standard,
 #                    inline. No skills tree, no adapters, no detected stacks.
@@ -210,7 +210,7 @@ detect_tool() {
 
 # Every stack a standard can be scoped to, in the order the stamp records them
 # and the prompt offers them. Mirrors $KnownStacks in install.ps1.
-KNOWN_STACKS="dotnet python rust c-cpp node go godot unreal"
+KNOWN_STACKS="dotnet python rust c-cpp node go godot unreal java kotlin android"
 
 detect_stacks() {
     ds_found=""
@@ -224,15 +224,23 @@ detect_stacks() {
         -o -name 'setup.py' -o -name 'requirements.txt' -o -name 'Pipfile' \
         -o -name 'Cargo.toml' -o -name 'CMakeLists.txt' -o -name '*.vcxproj' \
         -o -name 'meson.build' -o -name 'package.json' -o -name 'go.mod' \
-        -o -name 'project.godot' -o -name '*.uproject' -o -name '*.uplugin' \) -print 2>/dev/null)
+        -o -name 'project.godot' -o -name '*.uproject' -o -name '*.uplugin' \
+        -o -name 'pom.xml' -o -name 'build.gradle' -o -name 'build.gradle.kts' \
+        -o -name 'settings.gradle' -o -name 'settings.gradle.kts' \
+        -o -name 'libs.versions.toml' \) -print 2>/dev/null)
 
     # Unreal generates a .sln and .vcxproj files for its own build tool. In an
     # Unreal project they say nothing about the stack, so they are held back
     # and counted only when no Unreal marker turns up.
     ds_gen=""
+    ds_jvm=0
+    set --
     while IFS= read -r ds_f; do
         [ -n "$ds_f" ] || continue
         case "${ds_f##*/}" in
+            pom.xml|build.gradle|build.gradle.kts|settings.gradle|settings.gradle.kts)
+                                                                  ds_jvm=1; set -- "$@" "$ds_f" ;;
+            libs.versions.toml)                                   set -- "$@" "$ds_f" ;;
             *.sln)                                                ds_gen="$ds_gen dotnet" ;;
             *.vcxproj)                                            ds_gen="$ds_gen c-cpp" ;;
             *.slnx|*.csproj|*.fsproj|*.vbproj|global.json)        ds_add dotnet ;;
@@ -251,6 +259,18 @@ DSEOF
         *" unreal "*) ;;
         *) for ds_g in $ds_gen; do ds_add "$ds_g"; done ;;
     esac
+
+    # A Gradle or Maven build is a JVM project, but the file name does not say
+    # which kind. The build files do: the Android plugin id and any mention of
+    # Kotlin. Without Kotlin it is Java.
+    if [ "$ds_jvm" -eq 1 ]; then
+        ds_hits=$(grep -h -o -E 'com\.android|kotlin' "$@" 2>/dev/null | LC_ALL=C sort -u | tr '\n' ' ')
+        case " $ds_hits " in *" com.android "*) ds_add android ;; esac
+        case " $ds_hits " in
+            *" kotlin "*) ds_add kotlin ;;
+            *) ds_add java ;;
+        esac
+    fi
 
     # Emitted in the fixed order the checks once ran in, so the recorded stack
     # stamp does not depend on filesystem traversal order and agrees with

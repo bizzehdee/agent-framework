@@ -229,6 +229,18 @@ UNREAL_PATTERN=$(grep -l '^stack: unreal' "$REPO_ROOT"/standards/*.md |
     sed 's|.*/||; s|\.md$||' | tr '\n' '|' | sed 's/|$//')
 CPP_PATTERN=$(grep -l '^stack: c-cpp' "$REPO_ROOT"/standards/*.md |
     sed 's|.*/||; s|\.md$||' | tr '\n' '|' | sed 's/|$//')
+# A standard may list several stacks, so these match the name anywhere in the
+# list rather than the whole value.
+stack_pattern() {
+    grep -l -E "^stack: (.*,)?$1(,|\$)" "$REPO_ROOT"/standards/*.md |
+        sed 's|.*/||; s|\.md$||' | tr '\n' '|' | sed 's/|$//'
+}
+stack_count() {
+    grep -l -E "^stack: (.*,)?$1(,|\$)" "$REPO_ROOT"/standards/*.md | wc -l | tr -d ' '
+}
+JAVA_PATTERN=$(stack_pattern java)
+KOTLIN_PATTERN=$(stack_pattern kotlin)
+ANDROID_PATTERN=$(stack_pattern android)
 
 sh_build --out "$WORK/def"
 assert_eq 'default build root is AGENTS.md + .agents' \
@@ -399,6 +411,25 @@ assert_eq 'an Unreal project receives the unreal standards' \
     "$(ls "$WORK/proj-unreal/.agents/skills" | grep -c -E "$UNREAL_PATTERN")" "$SRC_UNREAL"
 assert_eq 'an Unreal project ignores its generated project files' \
     "$(ls "$WORK/proj-unreal/.agents/skills" | grep -c -E "$DOTNET_PATTERN|$CPP_PATTERN")" '0'
+
+# A JVM build file does not name its stack; its contents do.
+mkdir -p "$WORK/proj-java" "$WORK/proj-android/app"
+printf '<project></project>\n' > "$WORK/proj-java/pom.xml"
+printf 'plugins {\n    id("com.android.application")\n    kotlin("android")\n}\n' \
+    > "$WORK/proj-android/app/build.gradle.kts"
+
+sh_install "$WORK/proj-java" -y
+assert_eq 'a Maven project with no Kotlin receives the java standards' \
+    "$(ls "$WORK/proj-java/.agents/skills" | grep -c -E "^($JAVA_PATTERN)\$")" "$(stack_count java)"
+assert_eq 'a Java project receives no kotlin or android standards' \
+    "$(ls "$WORK/proj-java/.agents/skills" | grep -c -E '^(kotlin|android)-')" '0'
+
+sh_install "$WORK/proj-android" -y
+assert_eq 'a Kotlin Android project receives the kotlin and android standards' \
+    "$(ls "$WORK/proj-android/.agents/skills" | grep -c -E "^($KOTLIN_PATTERN|$ANDROID_PATTERN)\$")" \
+    "$(ls "$REPO_ROOT"/standards | grep -c -E "^($KOTLIN_PATTERN|$ANDROID_PATTERN)\.md\$")"
+assert_eq 'a Kotlin Android project receives no java-only standards' \
+    "$(ls "$WORK/proj-android/.agents/skills" | grep -c -E '^java-')" '0'
 
 # --- 9. Install behaviour ------------------------------------------------
 
@@ -608,7 +639,8 @@ if [ -n "$MANIFEST" ]; then
     {
         LC_ALL=C sort "$WORK/test-names" | sed 's/^/test  /'
         for tree in def adapters userpath s-any s-dotnet proj-dotnet proj-python \
-                    proj-godot proj-godot-cs proj-unreal inst-claude inst-copilot \
+                    proj-godot proj-godot-cs proj-unreal proj-java proj-android \
+                    inst-claude inst-copilot \
                     lite lite-stack lite-inst lite-proj lite-proj-stack lite-conv up; do
             # shellcheck disable=SC2086
             # Some sha256sum builds mark binary mode as " *path"; normalise to the

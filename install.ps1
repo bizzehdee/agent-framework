@@ -248,7 +248,8 @@ function Find-Tool {
 
 # Every stack a standard can be scoped to, in the order the stamp records them
 # and the prompt offers them. Mirrors KNOWN_STACKS in install.sh.
-$KnownStacks = 'dotnet', 'python', 'rust', 'c-cpp', 'node', 'go', 'godot', 'unreal'
+$KnownStacks = 'dotnet', 'python', 'rust', 'c-cpp', 'node', 'go', 'godot', 'unreal',
+    'java', 'kotlin', 'android'
 
 function Get-ProjectStacks {
     $markers = [ordered]@{
@@ -282,6 +283,22 @@ function Get-ProjectStacks {
             if ($isUnreal -and $generated -contains $pattern) { continue }
             if (Test-Marker $pattern) { $found.Add($stack); break }
         }
+    }
+
+    # A Gradle or Maven build is a JVM project, but the file name does not say
+    # which kind. The build files do: the Android plugin id and any mention of
+    # Kotlin. Without Kotlin it is Java.
+    $jvmFiles = @(foreach ($pattern in 'pom.xml', 'build.gradle', 'build.gradle.kts',
+            'settings.gradle', 'settings.gradle.kts', 'libs.versions.toml') {
+            Get-ChildItem -Path $destination -Filter $pattern -Depth 2 -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -notmatch '[\\/](node_modules|\.git|Intermediate)[\\/]' }
+        })
+    if (@($jvmFiles | Where-Object { $_.Name -ne 'libs.versions.toml' }).Count -gt 0) {
+        $paths = @($jvmFiles | ForEach-Object { $_.FullName })
+        $isKotlin = [bool](Select-String -LiteralPath $paths -Pattern 'kotlin' -SimpleMatch -CaseSensitive -Quiet)
+        $isAndroid = [bool](Select-String -LiteralPath $paths -Pattern 'com.android' -SimpleMatch -CaseSensitive -Quiet)
+        if ($isKotlin) { $found.Add('kotlin') } else { $found.Add('java') }
+        if ($isAndroid) { $found.Add('android') }
     }
     return $found
 }

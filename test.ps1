@@ -296,6 +296,16 @@ $PythonNames = @(Get-StackNames 'python')
 $GodotNames = @(Get-StackNames 'godot')
 $UnrealNames = @(Get-StackNames 'unreal')
 $CppNames = @(Get-StackNames 'c-cpp')
+# A standard may list several stacks, so this matches the name anywhere in the
+# list rather than the whole value.
+function Get-StackNamesIncluding([string]$Stack) {
+    return @($Sources | Where-Object {
+            ((Get-FrontmatterValue $_.FullName 'stack') -split ',') -contains $Stack
+        } | ForEach-Object { $_.BaseName })
+}
+$JavaNames = @(Get-StackNamesIncluding 'java')
+$KotlinNames = @(Get-StackNamesIncluding 'kotlin')
+$AndroidNames = @(Get-StackNamesIncluding 'android')
 # Standards scoped to any named stack, i.e. excluded from a stacks=any build.
 $SrcStacked = @($Sources | Where-Object { (Get-FrontmatterValue $_.FullName 'stack') -ne 'any' }).Count
 
@@ -479,6 +489,26 @@ Invoke-Install @{ Target = $ProjUnreal; Yes = $true }
 Assert-Eq 'an Unreal project receives the unreal standards' (Get-SkillCount $ProjUnreal $UnrealNames) $UnrealNames.Count
 Assert-Eq 'an Unreal project ignores its generated project files' `
     (Get-SkillCount $ProjUnreal ($DotnetNames + $CppNames)) 0
+
+# A JVM build file does not name its stack; its contents do.
+$ProjJava = Join-Path $Work 'proj-java'
+$ProjAndroid = Join-Path $Work 'proj-android'
+Set-Text (Join-Path $ProjJava 'pom.xml') "<project></project>`n"
+Set-Text (Join-Path $ProjAndroid 'app/build.gradle.kts') `
+    "plugins {`n    id(`"com.android.application`")`n    kotlin(`"android`")`n}`n"
+
+Invoke-Install @{ Target = $ProjJava; Yes = $true }
+Assert-Eq 'a Maven project with no Kotlin receives the java standards' `
+    (Get-SkillCount $ProjJava $JavaNames) $JavaNames.Count
+Assert-Eq 'a Java project receives no kotlin or android standards' `
+    @(Get-SkillNames $ProjJava | Where-Object { $_ -cmatch '^(kotlin|android)-' }).Count 0
+
+Invoke-Install @{ Target = $ProjAndroid; Yes = $true }
+$kotlinAndroid = @(($KotlinNames + $AndroidNames) | Select-Object -Unique)
+Assert-Eq 'a Kotlin Android project receives the kotlin and android standards' `
+    (Get-SkillCount $ProjAndroid $kotlinAndroid) $kotlinAndroid.Count
+Assert-Eq 'a Kotlin Android project receives no java-only standards' `
+    @(Get-SkillNames $ProjAndroid | Where-Object { $_ -cmatch '^java-' }).Count 0
 
 # --- 9. Install behaviour ------------------------------------------------
 
@@ -691,7 +721,8 @@ if ($Manifest) {
     foreach ($name in (Get-OrdinalSorted $script:TestNames.ToArray())) { $lines.Add("test  $name") }
 
     $trees = 'def', 'adapters', 'userpath', 's-any', 's-dotnet', 'proj-dotnet', 'proj-python',
-        'proj-godot', 'proj-godot-cs', 'proj-unreal', 'inst-claude', 'inst-copilot',
+        'proj-godot', 'proj-godot-cs', 'proj-unreal', 'proj-java', 'proj-android',
+        'inst-claude', 'inst-copilot',
         'lite', 'lite-stack', 'lite-inst', 'lite-proj', 'lite-proj-stack', 'lite-conv', 'up'
     foreach ($tree in $trees) {
         $root = Join-Path $Work $tree

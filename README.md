@@ -33,7 +33,7 @@ If you run a local model, or any model with a small context window, use the
 `generic-lite` package. The full packages rely on the model loading a standard
 on demand when its trigger matches, which small models (9B to 12B, or a
 27B-class MoE with a 128k window) do not do reliably. Lite puts the core rules
-in one always-on `AGENTS.md` of roughly 4k tokens, with nothing else to load.
+in one always-on `AGENTS.md` of roughly 5k tokens, with nothing else to load.
 It carries no language or framework rules; to add them, run the installer with
 `--lite=LIST` as described under [Lite](#lite-small-local-models).
 
@@ -130,7 +130,7 @@ words. `--lite` installs one always-on file instead:
 ```
 
 It writes a single `AGENTS.md` holding the core rules: the ten non-negotiables
-plus the checklist of each universal standard as imperative rules, roughly 4k
+plus the checklist of each universal standard as imperative rules, roughly 5k
 tokens. No language or framework standard is included, and a detected stack is
 not added. Name the stacks you want:
 
@@ -143,7 +143,7 @@ not added. Name the stacks you want:
 ```
 
 `--lite=LIST` is the same as `--lite --stacks LIST`, and `--lite=all` includes
-every stack at roughly 8k tokens. A lite install has
+every stack at roughly 10k tokens. A lite install has
 no skills tree, and the installer refuses adapters with it. `--check` and
 `--upgrade` read the mode from the stamp, so a lite install stays lite.
 `--upgrade --lite` converts a full install to the core rules and prunes the
@@ -167,6 +167,13 @@ Detection looks for marker files up to three levels deep:
 | `go.mod` | `go` |
 | `project.godot` | `godot` |
 | `*.uproject`, `*.uplugin` | `unreal` |
+| `pom.xml`, `build.gradle(.kts)`, `settings.gradle(.kts)` | `java`, `kotlin`, `android` |
+
+A Gradle or Maven build file does not name its stack, so the installer reads
+the build files and the version catalog. `com.android` anywhere in them adds
+`android`. `kotlin` anywhere in them makes the project `kotlin`; otherwise it
+is `java`. A project that mixes Java and Kotlin sources is detected as
+`kotlin`: add the Java standards with `--stacks kotlin,java,android`.
 
 A Godot C# project also has a `.csproj`, so it receives both `godot` and
 `dotnet`. An Unreal project receives `unreal` alone: the `.sln` and `.vcxproj`
@@ -308,6 +315,9 @@ Universal (`stack: any`):
 | `performance-discipline` | Measure before optimising; defects to avoid by default. |
 | `technical-writing` | Controlled style for human- and machine-facing prose. |
 | `process-control` | Waiting on and killing processes by PID, never by a command-line pattern the matching command itself contains. |
+| `platform-agnostic-development` | Code and scripts that behave the same on Windows, Linux, and macOS: paths, case, line endings, encoding, no assumed shell or tool. |
+| `developing-on-windows` | Operating a Windows machine: which shell, PowerShell syntax, encoding, locked files, no system changes unasked. |
+| `developing-on-linux` | Operating Fedora or Ubuntu and Debian: `dnf` versus `apt`, no `sudo` unasked, the system Python, POSIX `sh`, SELinux and AppArmor. |
 
 `stack: dotnet`:
 
@@ -358,6 +368,35 @@ Universal (`stack: any`):
 | `godot-project-files` | Engine version check, hand-editing `.tscn`/`.tres`, `.uid` and `.import` sidecars, export secrets, headless validation. |
 | `godot-scripting` | Static typing, naming and member order, Godot 4 signals, exports, C# partial classes and generated names. |
 | `godot-scene-architecture` | Call down and signal up, autoload discipline, shared resources, the frame loop, main-thread rule, freeing, multiplayer authority. |
+
+`stack: java,kotlin,android` (any JVM project):
+
+| Standard | Covers |
+|---|---|
+| `jvm-build-and-dependencies` | Gradle and Maven: the wrapper, a declared JDK toolchain, versions in one place and exact, narrow dependency scopes, build logic in convention plugins. |
+
+`stack: java`:
+
+| Standard | Covers |
+|---|---|
+| `java-language` | The project's Java version, records and immutability, null and `Optional`, equality, generics, exceptions and resources, streams. |
+| `java-concurrency` | Executors, guarded shared state, locks, interruption, `CompletableFuture`, virtual threads. |
+
+`stack: kotlin`:
+
+| Standard | Covers |
+|---|---|
+| `kotlin-language` | Null safety without `!!`, `val` and read-only collections, data and sealed types, scope functions, Java interop, errors. |
+| `kotlin-coroutines` | Structured concurrency, injected dispatchers, cancellation, exceptions, `Flow` and `StateFlow`, `runTest`. |
+
+`stack: android`:
+
+| Standard | Covers |
+|---|---|
+| `android-project-files` | SDK levels and toolkit check, the manifest, resources, signing and secrets, R8 rules, validating with Gradle. |
+| `android-architecture` | UI and data layers, ViewModels and one UI state, repositories, dependency injection, surviving rotation and process death. |
+| `android-ui` | Compose state, effects, and stability; view binding and fragment view lifecycle; accessibility and screen sizes. |
+| `android-platform-safety` | Runtime permissions, hostile intents, `PendingIntent` flags, `WorkManager` and foreground services, storage, network, WebView. |
 
 `stack: unreal` (Unreal Engine C++):
 

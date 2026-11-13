@@ -125,6 +125,11 @@ Add its marker files to `Get-ProjectStacks` / `detect_stacks` and its name to
 The known-stacks list fixes the order of the stamp and is what the installer
 offers when it finds no marker.
 
+A marker is normally a file name. Where one build file serves several stacks,
+as Gradle and Maven do for `java`, `kotlin`, and `android`, detection reads the
+file's contents instead; keep the two installers' patterns identical. A
+standard that applies to several stacks lists them: `stack: java,kotlin,android`.
+
 A lite build includes a stack only when it is named (`--lite=LIST`), so a new
 stack needs nothing extra there.
 

@@ -8,6 +8,18 @@ what sits between them. Dates are the day the change landed on `main`.
 
 ### Added
 
+- `java`, `kotlin`, and `android` stacks, detected by reading a project's
+  Gradle or Maven build files: `com.android` adds `android`, any mention of
+  `kotlin` makes it `kotlin`, and otherwise it is `java`. Nine standards:
+  `jvm-build-and-dependencies` (all three stacks), `java-language`,
+  `java-concurrency`, `kotlin-language`, `kotlin-coroutines`,
+  `android-project-files`, `android-architecture`, `android-ui`, and
+  `android-platform-safety`.
+- Three universal standards for the machine and for portability:
+  `platform-agnostic-development`, `developing-on-windows`, and
+  `developing-on-linux` (Fedora, and Ubuntu and Debian). Being universal, they
+  are part of bare `--lite`, which grows to about 5k tokens.
+
 - `unreal` stack, detected from `*.uproject` or `*.uplugin`, with five
   standards: `unreal-project-files`, `unreal-cpp-conventions`,
   `unreal-object-lifetime`, `unreal-gameplay-architecture`, and
@@ -53,7 +65,7 @@ what sits between them. Dates are the day the change landed on `main`.
 ### Changed
 
 - `--lite` is now the core rules only: the non-negotiables plus the universal
-  standards, about 4k tokens. It no longer adds detected stacks. Name the
+  standards. It no longer adds detected stacks. Name the
   stacks to include with `--lite=LIST` (`-Lite -Stacks LIST` in PowerShell).
   An existing lite install keeps its stamped stacks on `--upgrade`. The
   `generic-lite` release package now holds the core rules only.
